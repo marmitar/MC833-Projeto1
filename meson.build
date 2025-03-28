@@ -1,6 +1,7 @@
 project('mc833-p1-187679', 'c',
     version: '0.0.0',
     meson_version: '>= 1.2.0',
+    subproject_dir: 'external',
     default_options: {
         'c_std': 'gnu23',
         'buildtype': 'release',
@@ -18,14 +19,27 @@ project('mc833-p1-187679', 'c',
     },
 )
 
-# # # # # # # # # #
-# COMPILER FLAGS  #
-
 warning_level = get_option('warning_level') == 'everything' ? 5 : get_option('warning_level').to_int()
 optimizations_enabled = get_option('optimization') in ['2', '3', 's', 'z']
 debugging_enabled = get_option('debug')
 
+# # # # # # # # # #
+# COMPILER CHECKS #
+
+add_global_arguments('-D_GNU_SOURCE=1', language: 'c')
 cc = meson.get_compiler('c')
+
+required_headers = [
+    'netinet/in.h',
+    'sys/socket.h',
+    'unistd.h',
+]
+foreach header : required_headers
+    cc.check_header(header, required: true)
+endforeach
+
+# # # # # # # # # #
+# COMPILER FLAGS  #
 
 warnings = []
 # Safety warnings
@@ -57,6 +71,7 @@ if warning_level >= 3
         checked: 'warn',
     ) + cc.get_supported_arguments(
         optimizations_enabled ? '-Rpass=.*' : [], # Clang only
+        optimizations_enabled ? '-Rpass-missed=.*' : [], # Clang only
         checked: 'off',
     )
 endif
@@ -117,13 +132,39 @@ linker_options = cc.get_supported_link_arguments(
     '-Wl,-z,pack-relative-relocs'
 )
 
+# # # # # # # # #
+# DEPENDENCIES  #
+
+sqlite3 = subproject('sqlite3',
+        default_options: {
+            'strict': debugging_enabled,
+            'all-extensions': 'disabled',
+        },
+        required: true,
+        version: ['>=3.49.1', '<4.0.0'],
+    ) \
+    .get_variable('sqlite3_dep') \
+    .partial_dependency(
+        compile_args: true,
+        link_args: true,
+        sources: true,
+        includes: true,
+        links: false,
+    ) \
+    .as_system('system')
+
+sqlite3_overrides = [
+    '-DSQLITE_API=',
+]
+
 # # # # # #
 # TARGETS #
 
 executable('main', files('src/main.c'),
     include_directories: include_directories('src/'),
-    c_args: warnings + optimizations + general_codegen + debugging,
+    c_args: warnings + optimizations + general_codegen + debugging + sqlite3_overrides,
     link_args: linker_options,
     gnu_symbol_visibility: 'hidden',
     export_dynamic: false,
+    dependencies: sqlite3,
 )
