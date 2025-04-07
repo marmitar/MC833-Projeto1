@@ -8,6 +8,7 @@ patch_url = https://wrapdb.mesonbuild.com/v2/sqlite3_3.49.1-1/get_patch
 patch_hash = 057f3371b366d390634ca4ca12eee760fd8244d88ce37bb7153a90e365c04049
 source_fallback_url = https://github.com/mesonbuild/wrapdb/releases/download/sqlite3_3.49.1-1/sqlite-amalgamation-3490100.zip
 wrapdb_version = 3.49.1-1
+diff_files = sqlite3/0001-omit-cte.patch, sqlite3/0002-omit-trigger.patch, sqlite3/0003-omit-windowfunc.patch
 
 [provide]
 sqlite3 = sqlite3_dep

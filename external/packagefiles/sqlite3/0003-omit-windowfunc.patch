@@ -1,0 +1,49 @@
+From 5786e8f2f1c7ce483d165628ad6201260224c318 Mon Sep 17 00:00:00 2001
+From: Tiago de Paula <tiagodepalves@gmail.com>
+Date: Sun, 6 Apr 2025 23:47:25 -0300
+Subject: [PATCH 3/3] fix: SQLITE_OMIT_WINDOWFUNC
+
+---
+ sqlite3.c | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/sqlite3.c b/sqlite3.c
+index 26819df..4cb7f29 100644
+--- a/sqlite3.c
++++ b/sqlite3.c
+@@ -20841,8 +20841,21 @@ SQLITE_PRIVATE void sqlite3WindowChain(Parse*, Window*, Window*);
+ SQLITE_PRIVATE Window *sqlite3WindowAssemble(Parse*, Window*, ExprList*, ExprList*, Token*);
+ #else
+ # define sqlite3WindowDelete(a,b)
+-# define sqlite3WindowFunctions()
++# define sqlite3WindowUnlinkFromSelect(a)
++# define sqlite3WindowListDelete(a,b)
++# define sqlite3WindowAlloc(a,b,c,d,e,f,g) NULL
+ # define sqlite3WindowAttach(a,b,c)
++# define sqlite3WindowLink(a,b)
++# define sqlite3WindowCompare(a,b,c,d) 0
++# define sqlite3WindowCodeInit(a,b)
++# define sqlite3WindowCodeStep(a,b,c,d,e)
++# define sqlite3WindowRewrite(a,b) SQLITE_OK
++# define sqlite3WindowUpdate(a,b,c,d)
++# define sqlite3WindowDup(a,b,c,d) NULL
++# define sqlite3WindowListDup(a,b) NULL
++# define sqlite3WindowFunctions()
++# define sqlite3WindowChain(a,b,c)
++# define sqlite3WindowAssemble(a,w,c,d,e) (w)
+ #endif
+ 
+ /*
+@@ -178240,7 +178253,9 @@ static YYACTIONTYPE yy_reduce(
+ {
+   yymsp[-9].minor.yy637 = sqlite3SelectNew(pParse,yymsp[-7].minor.yy402,yymsp[-6].minor.yy563,yymsp[-5].minor.yy590,yymsp[-4].minor.yy402,yymsp[-3].minor.yy590,yymsp[-1].minor.yy402,yymsp[-8].minor.yy502,yymsp[0].minor.yy590);
+   if( yymsp[-9].minor.yy637 ){
++#ifndef SQLITE_OMIT_WINDOWFUNC
+     yymsp[-9].minor.yy637->pWinDefn = yymsp[-2].minor.yy483;
++#endif
+   }else{
+     sqlite3WindowListDelete(pParse->db, yymsp[-2].minor.yy483);
+   }
+-- 
+2.49.0
+

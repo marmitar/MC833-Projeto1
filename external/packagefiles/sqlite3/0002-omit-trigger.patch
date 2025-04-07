@@ -1,0 +1,49 @@
+From f65aaaa2a9797d876bc6c2ef0ac9180c133d4feb Mon Sep 17 00:00:00 2001
+From: Tiago de Paula <tiagodepalves@gmail.com>
+Date: Sun, 6 Apr 2025 23:46:57 -0300
+Subject: [PATCH 2/3] fix: SQLITE_OMIT_TRIGGER
+
+---
+ sqlite3.c | 21 +++++++++++++++------
+ 1 file changed, 15 insertions(+), 6 deletions(-)
+
+diff --git a/sqlite3.c b/sqlite3.c
+index 39a397a..26819df 100644
+--- a/sqlite3.c
++++ b/sqlite3.c
+@@ -21475,17 +21475,26 @@ SQLITE_PRIVATE   SrcList *sqlite3TriggerStepSrc(Parse*, TriggerStep*);
+ # define sqlite3ParseToplevel(p) ((p)->pToplevel ? (p)->pToplevel : (p))
+ # define sqlite3IsToplevel(p) ((p)->pToplevel==0)
+ #else
+-# define sqlite3TriggersExist(B,C,D,E,F) 0
+-# define sqlite3DeleteTrigger(A,B)
++# define sqlite3BeginTrigger(A,B,C,D,E,F,G,H,I,J)
++# define sqlite3FinishTrigger(A,B,C)
++# define sqlite3DropTrigger(A,B,C)
+ # define sqlite3DropTriggerPtr(A,B)
+-# define sqlite3UnlinkAndDeleteTrigger(A,B,C)
++# define sqlite3TriggersExist(B,C,D,E,F) NULL
++# define sqlite3TriggerList(X, Y) NULL
+ # define sqlite3CodeRowTrigger(A,B,C,D,E,F,G,H,I)
+ # define sqlite3CodeRowTriggerDirect(A,B,C,D,E,F)
+-# define sqlite3TriggerList(X, Y) 0
+-# define sqlite3ParseToplevel(p) p
+-# define sqlite3IsToplevel(p) 1
++# define sqliteViewTriggers(A,B,C,D,E)
++# define sqlite3DeleteTriggerStep(A,B)
++# define sqlite3TriggerSelectStep(A,B,C,D) NULL
++# define sqlite3TriggerInsertStep(A,B,C,D,E,F,G,H) NULL
++# define sqlite3TriggerUpdateStep(A,B,C,D,E,F,G,H) NULL
++# define sqlite3TriggerDeleteStep(A,B,C,D,E) NULL
++# define sqlite3DeleteTrigger(A,B)
++# define sqlite3UnlinkAndDeleteTrigger(A,B,C)
+ # define sqlite3TriggerColmask(A,B,C,D,E,F,G) 0
+ # define sqlite3TriggerStepSrc(A,B) 0
++# define sqlite3ParseToplevel(p) p
++# define sqlite3IsToplevel(p) 1
+ #endif
+ 
+ SQLITE_PRIVATE int sqlite3JoinType(Parse*, Token*, Token*, Token*);
+-- 
+2.49.0
+
