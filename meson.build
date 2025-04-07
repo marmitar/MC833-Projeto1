@@ -153,16 +153,114 @@ sqlite3 = subproject('sqlite3',
     ) \
     .as_system('system')
 
-sqlite3_overrides = [
-    '-DSQLITE_API=',
-]
+# See https://www.sqlite.org/compile.html
+sqlite3_overrides = {
+    'HAVE_FDATASYNC': 1,
+    'HAVE_GMTIME_R': 1,
+    'HAVE_ISNAN': 1,
+    'HAVE_LOCALTIME_R': 1,
+    'HAVE_MALLOC_USABLE_SIZE': 1,
+    'HAVE_STRCHRNUL': 1,
+    'HAVE_UTIME': 1,
+    'SQLITE_API': '__attribute__((fastcall))',
+    'SQLITE_APICALL': '__attribute__((fastcall))',
+    'SQLITE_EXTERN': '__attribute__((fastcall))',
+    'SQLITE_CALLBACK': '__attribute__((fastcall))',
+    'SQLITE_CDECL': '__attribute__((fastcall))',
+    'SQLITE_SYSAPI': '__attribute__((fastcall))',
+    'SQLITE_DEFAULT_AUTOMATIC_INDEX': 0,
+    # 'SQLITE_DEFAULT_AUTOVACUUM': 2,
+    'SQLITE_DEFAULT_FILE_PERMISSIONS': 600,
+    'SQLITE_DEFAULT_FOREIGN_KEYS': 0,
+    'SQLITE_DEFAULT_LOCKING_MODE': 0,
+    'SQLITE_DEFAULT_MEMSTATUS': 0,
+    'SQLITE_DEFAULT_SYNCHRONOUS': 1,
+    'SQLITE_DEFAULT_WAL_SYNCHRONOUS': 1,
+    'SQLITE_DIRECT_OVERFLOW_READ': 1,
+    'SQLITE_DISABLE_PAGECACHE_OVERFLOW_STATS': 1,
+    'SQLITE_DQS': 0,
+    'SQLITE_ENABLE_SORTER_REFERENCES': 1,
+    'SQLITE_ENABLE_UNKNOWN_SQL_FUNCTION': 1,
+    'SQLITE_LIKE_DOESNT_MATCH_BLOBS': 1,
+    'SQLITE_MAX_EXPR_DEPTH': 0,
+    'SQLITE_OMIT_ALTERTABLE': 1,
+    'SQLITE_OMIT_ATTACH': 1,
+    'SQLITE_OMIT_AUTHORIZATION': 1,
+    'SQLITE_OMIT_AUTOINCREMENT': 1,
+    'SQLITE_OMIT_AUTOINIT': 1,
+    'SQLITE_OMIT_AUTOMATIC_INDEX': 1,
+    'SQLITE_OMIT_AUTORESET': 1,
+    'SQLITE_OMIT_BETWEEN_OPTIMIZATION': 1,
+    'SQLITE_OMIT_BLOB_LITERAL': 1,
+    'SQLITE_OMIT_CASE_SENSITIVE_LIKE_PRAGMA': 1,
+    'SQLITE_OMIT_CAST': 1,
+    # 'SQLITE_OMIT_CHECK': 1,
+    'SQLITE_OMIT_COMPILEOPTION_DIAGS': 1,
+    'SQLITE_OMIT_COMPLETE': 1,
+    'SQLITE_OMIT_COMPOUND_SELECT': 1,
+    'SQLITE_OMIT_DATETIME_FUNCS': 1,
+    'SQLITE_OMIT_DECLTYPE': 1,
+    'SQLITE_OMIT_DEPRECATED': 1,
+    'SQLITE_OMIT_DESERIALIZE': 1,
+    'SQLITE_OMIT_FLOATING_POINT': 1,
+    'SQLITE_OMIT_FOREIGN_KEY': 1,
+    'SQLITE_OMIT_GENERATED_COLUMNS': 1,
+    'SQLITE_OMIT_GET_TABLE': 1,
+    'SQLITE_OMIT_INCRBLOB': 1,
+    'SQLITE_OMIT_INTROSPECTION_PRAGMAS': 1,
+    'SQLITE_OMIT_LIKE_OPTIMIZATION': 1,
+    'SQLITE_OMIT_LOAD_EXTENSION': 1,
+    'SQLITE_OMIT_LOCALTIME': 1,
+    'SQLITE_OMIT_MEMORYDB': 1,
+    'SQLITE_OMIT_OR_OPTIMIZATION': 1,
+    'SQLITE_OMIT_PROGRESS_CALLBACK': 1,
+    'SQLITE_OMIT_REINDEX': 1,
+    'SQLITE_OMIT_SHARED_CACHE': 1,
+    'SQLITE_OMIT_SUBQUERY': 1,
+    'SQLITE_OMIT_TCL_VARIABLE': 1,
+    'SQLITE_OMIT_TEMPDB': 1,
+    'SQLITE_OMIT_UTF16': 1,
+    # 'SQLITE_OMIT_VACUUM': 1,
+    'SQLITE_OMIT_VIEW': 1,
+    'SQLITE_OMIT_VIRTUALTABLE': 1,
+    'SQLITE_POWERSAFE_OVERWRITE': 1,
+    'SQLITE_STRICT_SUBTYPE': 1,
+    'SQLITE_TEMP_STORE': 3,
+    'SQLITE_THREADSAFE': 2,
+    'SQLITE_UNTESTABLE': 1,
+    'SQLITE_USE_ALLOCA': 1,
+    # Buggy options
+    # 'SQLITE_OMIT_CTE': 1,
+    # 'SQLITE_OMIT_TRIGGER': 1,
+    # 'SQLITE_OMIT_WINDOWFUNC': 1,
+}
+if debugging_enabled
+    sqlite3_overrides += {
+        'SQLITE_DEBUG': 1,
+        'SQLITE_ENABLE_API_ARMOR': 1,
+        'SQLITE_TRUSTED_SCHEMA': 0,
+    }
+else
+    sqlite3_overrides += {
+        'SQLITE_OMIT_ANALYZE': 1,
+        'SQLITE_OMIT_EXPLAIN': 1,
+        'SQLITE_OMIT_TRACE': 1,
+        'SQLITE_REVERSE_UNORDERED_SELECTS': 1,
+        'SQLITE_TRUSTED_SCHEMA': 1,
+    }
+endif
+
+sqlite3_flags = []
+foreach option, value : sqlite3_overrides
+    sqlite3_flags += [f'-D@option@=@value@']
+endforeach
 
 # # # # # #
 # TARGETS #
 
 executable('main', files('src/main.c'),
     include_directories: include_directories('src/'),
-    c_args: warnings + optimizations + general_codegen + debugging + sqlite3_overrides,
+    c_args: warnings + optimizations + general_codegen + debugging + sqlite3_flags,
     link_args: linker_options,
     gnu_symbol_visibility: 'hidden',
     export_dynamic: false,
