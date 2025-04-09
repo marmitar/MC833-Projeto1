@@ -5,6 +5,7 @@ Checks: '
   -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
   performance-*,
   modernize-*,
+  -modernize-use-nullptr,
   bugprone-*,
   misc-const-correctness,
   misc-include-cleaner,

@@ -1,2 +1,4 @@
 CompileFlags:
   CompilationDatabase: ./build
+  Add:
+    - -D_CLANGD=1

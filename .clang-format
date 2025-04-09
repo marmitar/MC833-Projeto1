@@ -59,7 +59,7 @@ AlignConsecutiveTableGenDefinitionColons:
   AlignFunctionPointers: false
   PadOperators:    false
 AlignEscapedNewlines: Left
-AlignOperands:   Align
+AlignOperands:   DontAlign
 AlignTrailingComments:
   Kind:            Always
   OverEmptyLines:  0
@@ -270,4 +270,6 @@ WhitespaceSensitiveMacros:
   - NS_SWIFT_NAME
   - PP_STRINGIZE
   - STRINGIZE
+  - STR
+  - _STR_
 ...
