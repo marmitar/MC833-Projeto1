@@ -260,7 +260,7 @@ endforeach
 # # # # # #
 # TARGETS #
 
-executable('main', files('src/main.c'),
+executable('main', files('src/main.c', 'src/database/database.c'),
     include_directories: include_directories('src/'),
     c_args: warnings + optimizations + general_codegen + debugging + sqlite3_flags,
     link_args: linker_options,
