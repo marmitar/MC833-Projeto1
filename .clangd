@@ -1,4 +1,7 @@
 CompileFlags:
   CompilationDatabase: ./build
   Add:
+    - -xc
     - -D_CLANGD=1
+Index:
+  Background: Build

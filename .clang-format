@@ -271,5 +271,5 @@ WhitespaceSensitiveMacros:
   - PP_STRINGIZE
   - STRINGIZE
   - STR
-  - _STR_
+  - STR_
 ...

@@ -8,4 +8,11 @@
   "mesonbuild.configureEnvironment": {
     "CC": "clang",
   },
+  "clangd.arguments": [
+    "--clang-tidy",
+    "--header-insertion=never",
+    "--background-index",
+    "--background-index-priority=normal",
+    "--pch-storage=memory",
+  ],
 }

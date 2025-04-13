@@ -2,7 +2,6 @@
 #include "./sqlite_source.h"  // must be included first for defines
 
 #include "defines.h"
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -177,8 +176,8 @@ db_conn *NULLABLE db_connect(const char filepath[NONNULL], const char *NONNULL e
 /** Disconnects to the database at `filepath` and free resources. */
 bool db_disconnect(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]) {
     bool ok = db_close(conn->db, errmsg);
-    conn->db = NULL;
 
+    memset(conn, 0, sizeof(struct database_connection));
     sqlite3_free(conn);
     return ok;
 }

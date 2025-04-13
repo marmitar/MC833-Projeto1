@@ -30,10 +30,10 @@
  */
 #define unlikely(x) (__builtin_expect((x), 0))
 
-// https://gcc.gnu.org/onlinedocs/gcc-4.8.5/cpp/Stringification.html
-#define _STR_(X) #X
 /** Stringification macro. */
-#define STR(X) _STR_(X)
+#define STR(X) STR_(X)
+// https://gcc.gnu.org/onlinedocs/gcc-4.8.5/cpp/Stringification.html
+#define STR_(X) #X
 
 /** Happy result, no errors. */
 #define OK 0
