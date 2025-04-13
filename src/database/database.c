@@ -1,16 +1,25 @@
 /** Database operations. */
 #include "./sqlite_source.h"  // must be included first for defines
-#define database_connection sqlite3
-#include "./database.h"
-#include "./schema.h"
 
 #include "defines.h"
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "./database.h"
+#include "./schema.h"
+
 static const char UNKNOWN_ERROR[] = "unknown error";
 static const char OUT_OF_MEMORY_ERROR[] = "out of memory";
+static const char ATEXIT_NOT_REGISTERED_ERROR[] = "could not call at_exit";
+
+[[gnu::cold, gnu::const, nodiscard]]
+/** Predefined error messages, which are NOT dynamically allocated and should not be free. */
+static inline bool is_predefined_errmsg(const char *NULLABLE error_message) {
+    return error_message == UNKNOWN_ERROR || error_message == OUT_OF_MEMORY_ERROR
+        || error_message == ATEXIT_NOT_REGISTERED_ERROR;
+}
 
 [[gnu::cold, gnu::returns_nonnull, nodiscard]]
 /**
@@ -18,7 +27,9 @@ static const char OUT_OF_MEMORY_ERROR[] = "out of memory";
  * allocation fails.
  */
 static const char *NONNULL errmsg_dup(const char *NULLABLE error_message) {
-    if unlikely (error_message == NULL) {
+    if unlikely (is_predefined_errmsg(error_message)) {
+        return error_message;
+    } else if unlikely (error_message == NULL) {
         return UNKNOWN_ERROR;
     }
 
@@ -35,14 +46,14 @@ static const char *NONNULL errmsg_dup(const char *NULLABLE error_message) {
 [[gnu::cold]]
 /** Copies the current SQLite error message from `str` into `errmsg`, if non-NULL. */
 static void errmsg_dup_str(const char *NONNULL errmsg[NULLABLE 1], const char str[NONNULL]) {
-    if (errmsg != NULL) {
+    if likely (errmsg != NULL) {
         *errmsg = errmsg_dup(str);
     }
 }
 
 [[gnu::cold]]
 /** Copies the current SQLite error message from `db` into `errmsg`, if non-NULL. */
-static void errmsg_dup_db(const char *NONNULL errmsg[NULLABLE 1], db_conn *NULLABLE db) {
+static void errmsg_dup_db(const char *NONNULL errmsg[NULLABLE 1], sqlite3 *NULLABLE db) {
     errmsg_dup_str(errmsg, sqlite3_errmsg(db));
 }
 
@@ -55,21 +66,32 @@ static void errmsg_dup_rc(const char *NONNULL errmsg[NULLABLE 1], const int rc) 
 /** Frees a dynamically allocated error message string. */
 void db_free_errmsg(const char *NONNULL errmsg) {
     // this string should have been "allocated" with `errmsg_dup`, which might return these static strings
-    if unlikely (errmsg == UNKNOWN_ERROR || errmsg == OUT_OF_MEMORY_ERROR) {
-        return;
+    if likely (!is_predefined_errmsg(errmsg)) {
+        sqlite3_free((char *) errmsg);
     }
+}
 
-    sqlite3_free((char *) errmsg);
+[[gnu::regcall, gnu::nonnull(1)]]
+/**
+ * Closes an open SQLite3 database connection, free resources and set `errmsg`, if necessary.
+ */
+static bool db_close(sqlite3 *NONNULL db, const char *NONNULL errmsg[NULLABLE 1]) {
+    const int rv = sqlite3_close_v2(db);
+    if unlikely (rv != SQLITE_OK) {
+        errmsg_dup_rc(errmsg, rv);
+        return false;
+    }
+    return true;
 }
 
 [[gnu::regcall, gnu::malloc, gnu::nonnull(1)]]
 /**
  * Open a database at `filepath`, either connecting to an existing database or creating a new one whe `create` is true.
  */
-db_conn *NULLABLE db_open(const char filepath[NONNULL], const char *NONNULL errmsg[NULLABLE 1], bool create) {
+static sqlite3 *NULLABLE db_open(const char filepath[NONNULL], const char *NONNULL errmsg[NULLABLE 1], bool create) {
     const int FLAGS = SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_PRIVATECACHE | SQLITE_OPEN_EXRESCODE;
 
-    db_conn *db = NULL;
+    sqlite3 *db = NULL;
     int rv = sqlite3_open_v2(filepath, &db, create ? FLAGS | SQLITE_OPEN_CREATE : FLAGS, NULL);
     if unlikely (rv != SQLITE_OK) {
         errmsg_dup_db(errmsg, db);
@@ -78,21 +100,6 @@ db_conn *NULLABLE db_open(const char filepath[NONNULL], const char *NONNULL errm
     }
 
     return db;
-}
-
-/** Connects to the existing database at `filepath`. */
-db_conn *NULLABLE db_connect(const char filepath[NONNULL], const char *NONNULL errmsg[NULLABLE 1]) {
-    return db_open(filepath, errmsg, false);
-}
-
-/** Closes an open database connection. */
-bool db_close(db_conn *NONNULL db, const char *NONNULL errmsg[NULLABLE 1]) {
-    const int rv = sqlite3_close_v2(db);
-    if unlikely (rv != SQLITE_OK) {
-        errmsg_dup_rc(errmsg, rv);
-        return false;
-    }
-    return true;
 }
 
 [[gnu::cold]]
@@ -106,7 +113,7 @@ static void db_shutdown(void) {
 
 [[gnu::cold]]
 /** Apply schema from SQL file. */
-static bool db_create_schema(db_conn *NONNULL db, const char *NONNULL errmsg[NULLABLE 1]) {
+static bool db_create_schema(sqlite3 *NONNULL db, const char *NONNULL errmsg[NULLABLE 1]) {
     int rv = sqlite3_exec(db, SCHEMA, nullptr, nullptr, (char **) errmsg);
     return likely(rv == SQLITE_OK);
 }
@@ -121,12 +128,12 @@ bool db_setup(const char filepath[NONNULL], const char *NONNULL errmsg[NULLABLE 
 
     rv = atexit(db_shutdown);
     if unlikely (rv != OK) {
-        errmsg_dup_str(errmsg, "could not call at_exit");
+        errmsg_dup_str(errmsg, ATEXIT_NOT_REGISTERED_ERROR);
         db_shutdown();
         return false;
     }
 
-    db_conn *db = db_open(filepath, errmsg, true);
+    sqlite3 *db = db_open(filepath, errmsg, true);
     if unlikely (db == NULL) {
         // `db_open` already sets `errmsg`
         return false;
@@ -139,4 +146,39 @@ bool db_setup(const char filepath[NONNULL], const char *NONNULL errmsg[NULLABLE 
     }
 
     return db_close(db, errmsg);
+}
+
+/**
+ * A connection to the database file, which is a SQLite3 connection with cached statements.
+ */
+struct database_connection {
+    /** The actual connection. */
+    sqlite3 *NONNULL db;
+};
+
+/** Connects to the existing database at `filepath`. */
+db_conn *NULLABLE db_connect(const char filepath[NONNULL], const char *NONNULL errmsg[NULLABLE 1]) {
+    db_conn *conn = sqlite3_malloc64(sizeof(struct database_connection));
+    if unlikely (conn == NULL) {
+        errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
+        return NULL;
+    }
+
+    conn->db = db_open(filepath, errmsg, false);
+    if unlikely (conn->db == NULL) {
+        // `db_open` already sets `errmsg`
+        sqlite3_free(conn);
+        return NULL;
+    }
+
+    return conn;
+}
+
+/** Disconnects to the database at `filepath` and free resources. */
+bool db_disconnect(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]) {
+    bool ok = db_close(conn->db, errmsg);
+    conn->db = NULL;
+
+    sqlite3_free(conn);
+    return ok;
 }

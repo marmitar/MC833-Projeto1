@@ -19,6 +19,15 @@ typedef struct database_connection db_conn;
  */
 bool db_setup(const char filepath[NONNULL], const char *NONNULL errmsg[NULLABLE 1]);
 
+[[gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
+/**
+ * Frees a dynamically allocated error message string.
+ *
+ * This function releases the memory allocated for the error message returned by any database function. If `errmsg` is
+ * NULL, no action is taken. After calling this function, `errmsg` becomes invalid.
+ */
+void db_free_errmsg(const char *NONNULL errmsg);
+
 [[gnu::regcall, gnu::malloc, gnu::nonnull(1), nodiscard, gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Connects to the existing database at `filepath`.
@@ -35,20 +44,11 @@ db_conn *NULLABLE db_connect(const char filepath[NONNULL], const char *NONNULL e
 /**
  * Closes an open database connection.
  *
- * Terminates the connection represented by `db`. On error, the function logs a message into `errmsg` (if non-null).
- * Once closed, the `db` pointer is invalid for further use.
+ * Terminates the connection represented by `conn`. On error, the function logs a message into `errmsg` (if non-null).
+ * Once closed, the `conn` pointer is invalid for further use.
  *
  * @note The caller must also call `db_free_errmsg` if an error message is set.
  */
-bool db_close(db_conn *NONNULL db, const char *NONNULL errmsg[NULLABLE 1]);
-
-[[gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
-/**
- * Frees a dynamically allocated error message string.
- *
- * This function releases the memory allocated for the error message returned by any database function. If `errmsg` is
- * NULL, no action is taken. After calling this function, `errmsg` becomes invalid.
- */
-void db_free_errmsg(const char *NONNULL errmsg);
+bool db_disconnect(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]);
 
 #endif  // SRC_DATABASE_H
