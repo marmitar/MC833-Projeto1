@@ -31,9 +31,9 @@
 #define unlikely(x) (__builtin_expect((x), 0))
 
 /** Stringification macro. */
-#define STR(X) STR_(X)
+#define STR(...) STR_(__VA_ARGS__)
 // https://gcc.gnu.org/onlinedocs/gcc-4.8.5/cpp/Stringification.html
-#define STR_(X) #X
+#define STR_(...) #__VA_ARGS__
 
 /** Happy result, no errors. */
 #define OK 0

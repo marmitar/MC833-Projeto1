@@ -272,4 +272,6 @@ WhitespaceSensitiveMacros:
   - STRINGIZE
   - STR
   - STR_
+  - SQL
+  - SQL_
 ...

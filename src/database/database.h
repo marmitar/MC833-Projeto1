@@ -17,7 +17,7 @@ typedef struct database_connection db_conn;
  * @note The caller is responsible for eventually calling `db_close` to release resources and `db_free_errmsg` to free
  *      any error message.
  */
-bool db_setup(const char filepath[NONNULL], const char *NONNULL errmsg[NULLABLE 1]);
+bool db_setup(const char filepath[restrict NONNULL], const char *NONNULL errmsg[NULLABLE 1]);
 
 [[gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
@@ -38,7 +38,7 @@ void db_free_errmsg(const char *NONNULL errmsg);
  * @note The caller is responsible for eventually calling `db_close` to release resources and `db_free_errmsg` to free
  *      any error message.
  */
-db_conn *NULLABLE db_connect(const char filepath[NONNULL], const char *NONNULL errmsg[NULLABLE 1]);
+db_conn *NULLABLE db_connect(const char filepath[restrict NONNULL], const char *NONNULL errmsg[NULLABLE 1]);
 
 [[gnu::regcall, gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
