@@ -1,6 +1,8 @@
 #include "database/database.h"
 
 #include "defines.h"
+#include <alloca.h>
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,8 +19,23 @@ static void print_error(const char operation[NONNULL const], const char *NONNULL
 
 [[gnu::nonnull(1), gnu::hot]]
 static void run(db_conn *NONNULL conn) {
-    (void) conn;
-    // TODO
+    struct movie *movie = alloca(offsetof(struct movie, genres) + 3 * sizeof(const char *));
+    movie->id = 0;
+    movie->title = "Star Wars";
+    movie->director = "George Lucas";
+    movie->release_year = 1977;
+    movie->genres[0] = "Sci-Fi";
+    movie->genres[1] = "Thriller";
+    movie->genres[2] = NULL;
+
+    const char *error = NULL;
+    db_result res = db_register_movie(conn, movie, &error);
+    if unlikely (res != DB_SUCCESS) {
+        print_error("register movie", error);
+        return;
+    }
+
+    printf("Movie id: %" PRIi64 "\n", movie->id);
 }
 
 extern int main(void) {

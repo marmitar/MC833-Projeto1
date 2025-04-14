@@ -83,7 +83,7 @@ static bool db_close(sqlite3 *NULLABLE db, const char *NONNULL errmsg[NULLABLE 1
         return true;
     }
 
-    errmsg_dup_rc(errmsg, rv);
+    errmsg_dup_db(errmsg, db);
     if unlikely (rv != SQLITE_BUSY) {
         return false;
     }
@@ -179,6 +179,8 @@ struct database_connection {
     sqlite3_stmt *NONNULL op_commit;
     /** ROLLBACK TRANSACTION. */
     sqlite3_stmt *NONNULL op_rollback;
+    /** REINDEX. */
+    sqlite3_stmt *NONNULL op_reindex;
     /** Register new movie into database and returns the id. */
     sqlite3_stmt *NONNULL op_insert_movie;
     /** Register new genre, if not existent. */
@@ -222,7 +224,7 @@ static sqlite3_stmt *NULLABLE db_prepare(
     const int rv = sqlite3_prepare_v3(db, sql, ((int) len) + 1, FLAGS, &stmt, &tail);
     if unlikely (rv != SQLITE_OK) {
         *has_error = true;
-        errmsg_dup_rc(errmsg, rv);
+        errmsg_dup_db(errmsg, db);
         assert(stmt == NULL);
         return NULL;
     }
@@ -249,11 +251,14 @@ static bool db_prepare_stmts(db_conn *NONNULL conn, const char *NONNULL errmsg[N
     sqlite3_stmt *rollback = SQL(
         ROLLBACK TRANSACTION;
     );
+    sqlite3_stmt *reindex = SQL(
+        REINDEX;
+    );
     sqlite3_stmt *insert_movie =
         SQL(
-        INSERT OR ROLLBACK INTO movie(title, director, release_year)
+        INSERT INTO movie(title, director, release_year)
             VALUES (:title, :director, :release_year)
-            RETURNING id;
+            RETURNING movie.id;
     );
     sqlite3_stmt *insert_genre = SQL(
         INSERT OR IGNORE INTO genre(name)
@@ -261,7 +266,7 @@ static bool db_prepare_stmts(db_conn *NONNULL conn, const char *NONNULL errmsg[N
     );
     sqlite3_stmt *insert_genre_link =
         SQL(
-        INSERT OR ROLLBACK INTO movie_genre(movie_id, genre_id)
+        INSERT INTO movie_genre(movie_id, genre_id)
             SELECT :movie, genre.id
                 FROM genre
                 WHERE genre.name = :genre;
@@ -305,6 +310,7 @@ static bool db_prepare_stmts(db_conn *NONNULL conn, const char *NONNULL errmsg[N
         sqlite3_finalize(begin);
         sqlite3_finalize(commit);
         sqlite3_finalize(rollback);
+        sqlite3_finalize(reindex);
         sqlite3_finalize(insert_movie);
         sqlite3_finalize(insert_genre);
         sqlite3_finalize(insert_genre_link);
@@ -324,6 +330,7 @@ static bool db_prepare_stmts(db_conn *NONNULL conn, const char *NONNULL errmsg[N
     set_stmt(begin);
     set_stmt(commit);
     set_stmt(rollback);
+    set_stmt(reindex);
     set_stmt(insert_movie);
     set_stmt(insert_genre);
     set_stmt(insert_genre_link);
@@ -369,36 +376,320 @@ db_conn *NULLABLE db_connect(const char filepath[restrict NONNULL], const char *
     return conn;
 }
 
-[[gnu::regcall, gnu::nonnull(1, 2)]]
-static void db_finalize(sqlite3_stmt *NONNULL stmt, bool *NONNULL ok, const char *NONNULL errmsg[NULLABLE 1]) {
+[[gnu::regcall, gnu::nonnull(1, 2, 3)]]
+/** Closes a prepared statement. Used during disconnect. */
+static void db_finalize(
+    sqlite3 *NONNULL db,
+    sqlite3_stmt *NONNULL stmt,
+    bool *NONNULL ok,
+    const char *NONNULL errmsg[NULLABLE 1]
+) {
     int rv = sqlite3_finalize(stmt);
     if unlikely (rv != SQLITE_OK) {
         // set errmsg on the first error only
         if (*ok) {
-            errmsg_dup_rc(errmsg, rv);
+            errmsg_dup_db(errmsg, db);
         }
         *ok = false;
     }
 }
 
-/** Disconnects to the database at `filepath` and free resources. */
+/** Disconnects to the database and free resources. */
 bool db_disconnect(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]) {
     bool ok = true;
-    db_finalize(conn->op_begin, &ok, errmsg);
-    db_finalize(conn->op_commit, &ok, errmsg);
-    db_finalize(conn->op_rollback, &ok, errmsg);
-    db_finalize(conn->op_insert_movie, &ok, errmsg);
-    db_finalize(conn->op_insert_genre, &ok, errmsg);
-    db_finalize(conn->op_insert_genre_link, &ok, errmsg);
-    db_finalize(conn->op_delete_movie, &ok, errmsg);
-    db_finalize(conn->op_delete_unused_genres, &ok, errmsg);
-    db_finalize(conn->op_select_all_titles, &ok, errmsg);
-    db_finalize(conn->op_select_all_movies, &ok, errmsg);
-    db_finalize(conn->op_select_movie, &ok, errmsg);
-    db_finalize(conn->op_select_movie_genres, &ok, errmsg);
-    ok = db_close(conn->db, ok ? errmsg : NULL) && ok;
+    sqlite3 *db = conn->db;
+    db_finalize(db, conn->op_begin, &ok, errmsg);
+    db_finalize(db, conn->op_commit, &ok, errmsg);
+    db_finalize(db, conn->op_rollback, &ok, errmsg);
+    db_finalize(db, conn->op_reindex, &ok, errmsg);
+    db_finalize(db, conn->op_insert_movie, &ok, errmsg);
+    db_finalize(db, conn->op_insert_genre, &ok, errmsg);
+    db_finalize(db, conn->op_insert_genre_link, &ok, errmsg);
+    db_finalize(db, conn->op_delete_movie, &ok, errmsg);
+    db_finalize(db, conn->op_delete_unused_genres, &ok, errmsg);
+    db_finalize(db, conn->op_select_all_titles, &ok, errmsg);
+    db_finalize(db, conn->op_select_all_movies, &ok, errmsg);
+    db_finalize(db, conn->op_select_movie, &ok, errmsg);
+    db_finalize(db, conn->op_select_movie_genres, &ok, errmsg);
+    ok = db_close(db, ok ? errmsg : NULL) && ok;
 
     memset(conn, 0, sizeof(struct database_connection));
     free(conn);
     return ok;
+}
+
+[[gnu::regcall, gnu::const]]
+/**
+ * Translate SQLite3 extended error codes into simpler values.
+ *
+ * @param rv Return value of the last statement operation.
+ * @param rrv Return value of the `sqlite3_reset()` call after that.
+ */
+static db_result check_result(const int rv, const int rrv) {
+    // if `sqlite3_reset()` fails, we restart the thread
+    if unlikely (rrv != SQLITE_OK) {
+        return DB_HARD_ERROR;
+    }
+
+    switch (rv) {
+        /* DB_SUCCESS */
+        case SQLITE_DONE:
+        case SQLITE_OK_LOAD_PERMANENTLY:
+        case SQLITE_OK_SYMLINK:
+        case SQLITE_OK:
+            return DB_SUCCESS;
+        /* DB_HARD_ERROR */
+        case SQLITE_CANTOPEN_CONVPATH:
+        case SQLITE_CANTOPEN_DIRTYWAL:
+        case SQLITE_CANTOPEN_FULLPATH:
+        case SQLITE_CANTOPEN_ISDIR:
+        case SQLITE_CANTOPEN_NOTEMPDIR:
+        case SQLITE_CANTOPEN_SYMLINK:
+        case SQLITE_CORRUPT_INDEX:
+        case SQLITE_CORRUPT_SEQUENCE:
+        case SQLITE_CORRUPT_VTAB:
+        case SQLITE_CORRUPT:
+        case SQLITE_INTERNAL:
+        case SQLITE_INTERRUPT:
+        case SQLITE_IOERR_AUTH:
+        case SQLITE_IOERR_BEGIN_ATOMIC:
+        case SQLITE_IOERR_BLOCKED:
+        case SQLITE_IOERR_CHECKRESERVEDLOCK:
+        case SQLITE_IOERR_CLOSE:
+        case SQLITE_IOERR_COMMIT_ATOMIC:
+        case SQLITE_IOERR_CONVPATH:
+        case SQLITE_IOERR_CORRUPTFS:
+        case SQLITE_IOERR_DATA:
+        case SQLITE_IOERR_DIR_CLOSE:
+        case SQLITE_IOERR_DIR_FSYNC:
+        case SQLITE_IOERR_FSTAT:
+        case SQLITE_IOERR_FSYNC:
+        case SQLITE_IOERR_GETTEMPPATH:
+        case SQLITE_IOERR_IN_PAGE:
+        case SQLITE_IOERR_LOCK:
+        case SQLITE_IOERR_MMAP:
+        case SQLITE_IOERR_READ:
+        case SQLITE_IOERR_ROLLBACK_ATOMIC:
+        case SQLITE_IOERR_SHORT_READ:
+        case SQLITE_IOERR_UNLOCK:
+        case SQLITE_IOERR_VNODE:
+        case SQLITE_IOERR_WRITE:
+        case SQLITE_MISUSE:
+        case SQLITE_NOTADB:
+        case SQLITE_NOTFOUND:
+        case SQLITE_PERM:
+        case SQLITE_READONLY_CANTINIT:
+        case SQLITE_READONLY_CANTLOCK:
+        case SQLITE_READONLY_DBMOVED:
+        case SQLITE_READONLY_DIRECTORY:
+        case SQLITE_READONLY_RECOVERY:
+        case SQLITE_READONLY_ROLLBACK:
+        case SQLITE_READONLY:
+            return DB_HARD_ERROR;
+        /* DB_RUNTIME_ERROR */
+        case SQLITE_ABORT_ROLLBACK:
+        case SQLITE_ABORT:
+        case SQLITE_BUSY_RECOVERY:
+        case SQLITE_BUSY_SNAPSHOT:
+        case SQLITE_BUSY_TIMEOUT:
+        case SQLITE_BUSY:
+        case SQLITE_CANTOPEN:
+        case SQLITE_ERROR_RETRY:
+        case SQLITE_ERROR_SNAPSHOT:
+        case SQLITE_FULL:
+        case SQLITE_IOERR_ACCESS:
+        case SQLITE_IOERR_DELETE_NOENT:
+        case SQLITE_IOERR_DELETE:
+        case SQLITE_IOERR_NOMEM:
+        case SQLITE_IOERR_RDLOCK:
+        case SQLITE_IOERR_SEEK:
+        case SQLITE_IOERR_SHMLOCK:
+        case SQLITE_IOERR_SHMMAP:
+        case SQLITE_IOERR_SHMOPEN:
+        case SQLITE_IOERR_SHMSIZE:
+        case SQLITE_IOERR_TRUNCATE:
+        case SQLITE_IOERR:
+        case SQLITE_LOCKED_SHAREDCACHE:
+        case SQLITE_LOCKED_VTAB:
+        case SQLITE_LOCKED:
+        case SQLITE_NOLFS:
+        case SQLITE_NOMEM:
+        case SQLITE_PROTOCOL:
+        case SQLITE_ROW:
+        case SQLITE_SCHEMA:
+            return DB_RUNTIME_ERROR;
+        /* DB_USER_ERROR */
+        case SQLITE_AUTH_USER:
+        case SQLITE_AUTH:
+        case SQLITE_CONSTRAINT_CHECK:
+        case SQLITE_CONSTRAINT_COMMITHOOK:
+        case SQLITE_CONSTRAINT_DATATYPE:
+        case SQLITE_CONSTRAINT_FOREIGNKEY:
+        case SQLITE_CONSTRAINT_FUNCTION:
+        case SQLITE_CONSTRAINT_NOTNULL:
+        case SQLITE_CONSTRAINT_PINNED:
+        case SQLITE_CONSTRAINT_PRIMARYKEY:
+        case SQLITE_CONSTRAINT_ROWID:
+        case SQLITE_CONSTRAINT_TRIGGER:
+        case SQLITE_CONSTRAINT_UNIQUE:
+        case SQLITE_CONSTRAINT_VTAB:
+        case SQLITE_CONSTRAINT:
+        case SQLITE_EMPTY:
+        case SQLITE_ERROR_MISSING_COLLSEQ:
+        case SQLITE_ERROR:
+        case SQLITE_FORMAT:
+        case SQLITE_MISMATCH:
+        case SQLITE_NOTICE_RBU:
+        case SQLITE_NOTICE_RECOVER_ROLLBACK:
+        case SQLITE_NOTICE_RECOVER_WAL:
+        case SQLITE_NOTICE:
+        case SQLITE_RANGE:
+        case SQLITE_TOOBIG:
+        case SQLITE_WARNING_AUTOINDEX:
+        case SQLITE_WARNING:
+        default:
+            return DB_USER_ERROR;
+    }
+}
+
+[[gnu::regcall, gnu::pure, gnu::nonnull(2)]]
+/** Checks a list of return values sequentially. */
+static db_result check_results(size_t n, const int rv[const NONNULL n], const int rrv) {
+    for (size_t i = 0; i < n; i++) {
+        db_result result = check_result(rv[i], rrv);
+        if (result != DB_SUCCESS) {
+            return result;
+        }
+    }
+    return DB_SUCCESS;
+}
+
+[[gnu::regcall, gnu::nonnull(1, 2), gnu::hot]]
+/** Runs a single transaction statement and reset it. */
+static db_result
+    db_transaction_op(db_conn *NONNULL conn, sqlite3_stmt *NONNULL stmt, const char *NONNULL errmsg[NULLABLE 1]) {
+    int rv = sqlite3_step(stmt);
+    int rrv = sqlite3_reset(stmt);
+    if unlikely (rv != SQLITE_DONE || rrv != SQLITE_OK) {
+        errmsg_dup_db(errmsg, conn->db);
+        return check_result(rv, rrv);
+    }
+    return DB_SUCCESS;
+}
+
+[[gnu::regcall, gnu::nonnull(1), gnu::hot]]
+/** Runs `BEGIN TRANSACTION`. */
+static db_result db_transaction_begin(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]) {
+    return db_transaction_op(conn, conn->op_begin, errmsg);
+}
+
+[[gnu::regcall, gnu::nonnull(1)]]
+/** Runs `ROLLBACK TRANSACTION`. */
+static db_result db_transaction_rollback(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]) {
+    return db_transaction_op(conn, conn->op_rollback, errmsg);
+}
+
+[[gnu::regcall, gnu::nonnull(1), gnu::hot]]
+/** Runs `COMMIT TRANSACTION`. */
+static db_result db_transaction_commit(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]) {
+    return db_transaction_op(conn, conn->op_commit, errmsg);
+}
+
+[[gnu::regcall, gnu::nonnull(1), gnu::hot]]
+/** Step through statement, ignoring results. */
+static db_result db_eval_stmt(sqlite3_stmt *NONNULL stmt) {
+    int rv = SQLITE_OK;
+    do {
+        rv = sqlite3_step(stmt);
+    } while (rv == SQLITE_ROW);
+
+    sqlite3_clear_bindings(stmt);
+    int rrv = sqlite3_reset(stmt);
+    if unlikely (rv != SQLITE_DONE || rrv != SQLITE_OK) {
+        return check_result(rv, rrv);
+    }
+
+    return DB_SUCCESS;
+}
+
+[[gnu::regcall, gnu::nonnull(2)]]
+/** Runs `op_insert_genre` inside an open transaction. */
+static db_result register_movie_in_transaction(db_conn conn, struct movie *NONNULL movie) {
+    // add all movie genres to db
+    for (const char *NULLABLE const *genre = movie->genres; *genre != NULL; genre++) {
+        int rv = sqlite3_bind_text(conn.op_insert_genre, 1, *genre, -1, SQLITE_STATIC);
+        if unlikely (rv != SQLITE_OK) {
+            sqlite3_clear_bindings(conn.op_insert_genre);
+            return check_result(rv, sqlite3_reset(conn.op_insert_genre));
+        }
+
+        db_result res = db_eval_stmt(conn.op_insert_genre);
+        if unlikely (res != DB_SUCCESS) {
+            return res;
+        }
+    }
+
+    // add movie itself to db
+    int rvv[3] = {SQLITE_OK, SQLITE_OK, SQLITE_OK};
+    rvv[0] = sqlite3_bind_text(conn.op_insert_movie, 1, movie->title, -1, SQLITE_STATIC);
+    rvv[1] = sqlite3_bind_text(conn.op_insert_movie, 2, movie->director, -1, SQLITE_STATIC);
+    rvv[2] = sqlite3_bind_int(conn.op_insert_movie, 3, movie->release_year);
+    if unlikely (rvv[0] != SQLITE_OK || rvv[1] != SQLITE_OK || rvv[2] != SQLITE_OK) {
+        sqlite3_clear_bindings(conn.op_insert_movie);
+        return check_results(3, rvv, sqlite3_reset(conn.op_insert_movie));
+    }
+
+    int rv = SQLITE_OK;
+    unsigned id_set = 0;
+    while ((rv = sqlite3_step(conn.op_insert_movie)) == SQLITE_ROW) {
+        movie->id = sqlite3_column_int64(conn.op_insert_movie, 0);
+        id_set += 1;
+    }
+
+    sqlite3_clear_bindings(conn.op_insert_movie);
+    int rrv = sqlite3_reset(conn.op_insert_movie);
+    if unlikely (rv != SQLITE_DONE || rrv != SQLITE_OK) {
+        return check_result(rv, rrv);
+    } else if unlikely (id_set != 1) {
+        return DB_HARD_ERROR;
+    }
+
+    // link movie to the genres
+    for (const char *NULLABLE const *genre = movie->genres; *genre != NULL; genre++) {
+        int rvv[2] = {SQLITE_OK, SQLITE_OK};
+        rvv[0] = sqlite3_bind_int64(conn.op_insert_genre_link, 1, movie->id);
+        rvv[1] = sqlite3_bind_text(conn.op_insert_genre_link, 2, *genre, -1, SQLITE_STATIC);
+        if unlikely (rvv[0] != SQLITE_OK || rvv[1] != SQLITE_OK) {
+            sqlite3_clear_bindings(conn.op_insert_genre_link);
+            return check_results(2, rvv, sqlite3_reset(conn.op_insert_genre_link));
+        }
+
+        db_result res = db_eval_stmt(conn.op_insert_genre_link);
+        if unlikely (res != DB_SUCCESS) {
+            return res;
+        }
+    }
+
+    return DB_SUCCESS;
+}
+
+/** Registers a new movie and updates its 'id' if successful. */
+db_result
+    db_register_movie(db_conn *NONNULL conn, struct movie *NONNULL movie, const char *NONNULL errmsg[NULLABLE 1]) {
+    assert(movie != NULL);
+    assert(movie->id == 0);
+
+    db_result res = db_transaction_begin(conn, errmsg);
+    if unlikely (res != DB_SUCCESS) {
+        return res;
+    }
+
+    res = register_movie_in_transaction(*conn, movie);
+    if unlikely (res != DB_SUCCESS) {
+        errmsg_dup_db(errmsg, conn->db);
+        db_transaction_rollback(conn, NULL);
+        return res;
+    }
+
+    return db_transaction_commit(conn, errmsg);
 }
