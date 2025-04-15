@@ -17,8 +17,15 @@ static void print_error(const char operation[NONNULL const], const char *NONNULL
 #undef RESET
 }
 
-bool show([[maybe_unused]] void *data, const struct movie *NONNULL movie) {
-    printf("%s\n", movie->title);
+[[gnu::regcall]]
+static bool show_movie([[maybe_unused]] void *data, const struct movie *NONNULL movie) {
+    printf("movie[%i]: %s\n", movie->id, movie->title);
+    return false;
+}
+
+[[gnu::regcall]]
+static bool show_summary([[maybe_unused]] void *data, const struct movie_summary summary) {
+    printf("summary[%i]: %s\n", summary.id, summary.title);
     return false;
 }
 
@@ -69,25 +76,19 @@ static void run(db_conn *NONNULL conn) {
         free(out);
     }
 
-    res = db_delete_movie(conn, movie->id, &error);
+    res = db_list_movies(conn, show_movie, NULL, &error);
     if unlikely (res != DB_SUCCESS) {
-        print_error("delete movie", error);
+        print_error("list movies", error);
     }
 
-    res = db_get_movie(conn, movie->id, &out, &error);
+    res = db_search_movies_by_genre(conn, "Sci-Fi", show_movie, NULL, &error);
     if unlikely (res != DB_SUCCESS) {
-        print_error("get movie", error);
-    } else {
-        printf("MOVIE: id=%" PRIi64 ", title=%s\n", out->id, out->title);
-        for (const char **g = out->genres; *g != NULL; g++) {
-            printf("GENRE: %s\n", *g);
-        }
-        free(out);
+        print_error("search movies", error);
     }
 
-    res = db_delete_movie(conn, movie->id, &error);
+    res = db_list_summaries(conn, show_summary, NULL, &error);
     if unlikely (res != DB_SUCCESS) {
-        print_error("delete movie", error);
+        print_error("list summaries", error);
     }
 }
 

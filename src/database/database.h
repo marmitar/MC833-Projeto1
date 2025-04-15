@@ -85,13 +85,13 @@ struct movie {
 };
 
 /**
- * Short representation of a movie. Title content is embeded into a single allocation.
+ * Short representation of a movie.
  */
 struct movie_summary {
     /** Unique identifier for the movie entry in the database. */
     int64_t id;
     /** Embedded movie title. */
-    char title[];
+    const char *NONNULL title;
 };
 
 [[nodiscard, gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
@@ -131,8 +131,9 @@ db_result db_add_genres(
  */
 db_result db_delete_movie(db_conn *NONNULL conn, int64_t movie_id, message *NULLABLE restrict errmsg);
 
+[[nodiscard, gnu::regcall, gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
- * Get a movie from the database.
+ * Get a movie from the database and write it to `movie`. The caller is reponsible for calling `free` on it.
  *
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
  stores an error message there.
@@ -141,6 +142,55 @@ db_result db_get_movie(
     db_conn *NONNULL conn,
     int64_t movie_id,
     struct movie *NONNULL *NONNULL movie,
+    message *NULLABLE restrict errmsg
+);
+
+[[nodiscard, gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
+/**
+ * List all movies from the database and run `callback` on each one.
+ *
+ * Stops whenever the callback returns true.
+ *
+ * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
+ stores an error message there.
+ */
+db_result db_list_movies(
+    db_conn *NONNULL conn,
+    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    void *NULLABLE callback_data,
+    message *NULLABLE restrict errmsg
+);
+
+[[nodiscard, gnu::regcall, gnu::nonnull(1, 2, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
+/**
+ * List all movies with a given genre and run `callback` on each one.
+ *
+ * Stops whenever the callback returns true.
+ *
+ * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
+ stores an error message there.
+ */
+db_result db_search_movies_by_genre(
+    db_conn *NONNULL conn,
+    const char genre[NONNULL restrict const],
+    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    void *NULLABLE callback_data,
+    message *NULLABLE restrict errmsg
+);
+
+[[nodiscard, gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
+/**
+ * List summaries of all movies in the database and run `callback` on each summary.
+ *
+ * Stops whenever the callback returns true.
+ *
+ * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
+ stores an error message there.
+ */
+db_result db_list_summaries(
+    db_conn *NONNULL conn,
+    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, struct movie_summary summary),
+    void *NULLABLE callback_data,
     message *NULLABLE restrict errmsg
 );
 
