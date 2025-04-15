@@ -3,6 +3,7 @@
 #define SRC_DATABASE_H
 
 #include "defines.h"
+#include <stddef.h>
 #include <stdint.h>
 
 /** Opaque handle to a database connection. */
@@ -18,7 +19,7 @@ typedef struct database_connection db_conn;
  * @note The caller is responsible for eventually calling `db_close` to release resources and `db_free_errmsg` to free
  *      any error message.
  */
-bool db_setup(const char filepath[restrict NONNULL], const char *NONNULL errmsg[NULLABLE 1]);
+bool db_setup(const char filepath[NONNULL restrict], const char *NONNULL errmsg[NULLABLE 1]);
 
 [[gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
@@ -39,7 +40,7 @@ void db_free_errmsg(const char *NONNULL errmsg);
  * @note The caller is responsible for eventually calling `db_close` to release resources and `db_free_errmsg` to free
  *      any error message.
  */
-db_conn *NULLABLE db_connect(const char filepath[restrict NONNULL], const char *NONNULL errmsg[NULLABLE 1]);
+db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], const char *NONNULL errmsg[NULLABLE 1]);
 
 [[gnu::regcall, gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
@@ -101,5 +102,21 @@ struct movie_summary {
  * if `errmsg` is provided, stores an error message there.
  */
 db_result db_register_movie(db_conn *NONNULL conn, struct movie *NONNULL movie, const char *NONNULL errmsg[NULLABLE 1]);
+
+[[gnu::regcall, gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
+/**
+ * Adds new genres from a NULL terminated list to an existing movie.
+ *
+ * Ensures the movie exists and the genre is new to that movie. If required, also creates a entry for the genre itself.
+ *
+ * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and,
+ * if `errmsg` is provided, stores an error message there.
+ */
+db_result db_add_genres(
+    db_conn *NONNULL conn,
+    int64_t movie_id,
+    const char *NULLABLE const genres[NONNULL restrict],
+    const char *NONNULL errmsg[NULLABLE restrict 1]
+);
 
 #endif  // SRC_DATABASE_H

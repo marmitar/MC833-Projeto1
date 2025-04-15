@@ -3,7 +3,10 @@
 
 #include "defines.h"
 #include <assert.h>
+#include <inttypes.h>
 #include <limits.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,7 +50,7 @@ static const char *NONNULL errmsg_dup(const char *NULLABLE error_message) {
 
 [[gnu::cold]]
 /** Copies the current SQLite error message from `str` into `errmsg`, if non-NULL. */
-static void errmsg_dup_str(const char *NONNULL errmsg[NULLABLE 1], const char str[restrict NONNULL]) {
+static void errmsg_dup_str(const char *NONNULL errmsg[NULLABLE 1], const char str[NONNULL restrict]) {
     if likely (errmsg != NULL) {
         *errmsg = errmsg_dup(str);
     }
@@ -99,7 +102,7 @@ static bool db_close(sqlite3 *NULLABLE db, const char *NONNULL errmsg[NULLABLE 1
  * Open a database at `filepath`, either connecting to an existing database or creating a new one whe `create` is true.
  */
 static sqlite3 *
-    NULLABLE db_open(const char filepath[restrict NONNULL], const char *NONNULL errmsg[NULLABLE 1], bool create) {
+    NULLABLE db_open(const char filepath[NONNULL restrict], const char *NONNULL errmsg[NULLABLE 1], bool create) {
     const int FLAGS = SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_PRIVATECACHE | SQLITE_OPEN_EXRESCODE;
 
     sqlite3 *db = NULL;
@@ -138,7 +141,7 @@ static bool db_create_schema(sqlite3 *NONNULL db, const char *NONNULL errmsg[NUL
 }
 
 /** Create or migrate database at `filepath`. */
-bool db_setup(const char filepath[restrict NONNULL], const char *NONNULL errmsg[NULLABLE 1]) {
+bool db_setup(const char filepath[NONNULL restrict], const char *NONNULL errmsg[NULLABLE 1]) {
     int rv = sqlite3_initialize();
     if unlikely (rv != SQLITE_OK) {
         errmsg_dup_rc(errmsg, rv);
@@ -147,6 +150,8 @@ bool db_setup(const char filepath[restrict NONNULL], const char *NONNULL errmsg[
 
     rv = atexit(db_shutdown);
     if unlikely (rv != OK) {
+        // ATEXIT_NOT_REGISTERED_ERROR is statically predefined because `atexit` only fails on out-of-memory
+        // situations, so it doesn't make sense to try another allocation here
         errmsg_dup_str(errmsg, ATEXIT_NOT_REGISTERED_ERROR);
         db_shutdown();
         return false;
@@ -206,8 +211,8 @@ struct database_connection {
 static sqlite3_stmt *NULLABLE db_prepare(
     sqlite3 *NONNULL db,
     size_t len,
-    const char sql[restrict NONNULL const len],
-    bool *NONNULL const has_error,  // shared error flag, for creating multiple statements in series
+    const char sql[NONNULL restrict len],
+    bool *NONNULL has_error,  // shared error flag, for creating multiple statements in series
     const char *NULLABLE errmsg[NULLABLE 1]
 ) {
     assert(len < INT_MAX);
@@ -346,7 +351,7 @@ static bool db_prepare_stmts(db_conn *NONNULL conn, const char *NONNULL errmsg[N
 }
 
 /** Connects to the existing database at `filepath`. */
-db_conn *NULLABLE db_connect(const char filepath[restrict NONNULL], const char *NONNULL errmsg[NULLABLE 1]) {
+db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], const char *NONNULL errmsg[NULLABLE 1]) {
     db_conn *conn = calloc(1, sizeof(struct database_connection));
     if unlikely (conn == NULL) {
         errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
@@ -554,7 +559,7 @@ static db_result check_result(const int rv, const int rrv) {
 
 [[gnu::regcall, gnu::pure, gnu::nonnull(2)]]
 /** Checks a list of return values sequentially. */
-static db_result check_results(size_t n, const int rv[const NONNULL n], const int rrv) {
+static db_result check_results(size_t n, const int rv[NONNULL const n], const int rrv) {
     for (size_t i = 0; i < n; i++) {
         db_result result = check_result(rv[i], rrv);
         if (result != DB_SUCCESS) {
@@ -612,12 +617,28 @@ static db_result db_eval_stmt(sqlite3_stmt *NONNULL stmt) {
     return DB_SUCCESS;
 }
 
+[[gnu::regcall, gnu::pure, gnu::nonnull(1)]]
+/** Calculate the size of a NULL terminated list of strings. */
+static size_t list_len(const char *NULLABLE const list[NONNULL]) {
+    if unlikely (list == NULL) {
+        return 0;
+    }
+
+    size_t len = 0;
+    while (list[len] != NULL) {
+        len++;
+    }
+    return len;
+}
+
 [[gnu::regcall, gnu::nonnull(2)]]
-/** Runs `op_insert_genre` inside an open transaction. */
-static db_result register_movie_in_transaction(db_conn conn, struct movie *NONNULL movie) {
+/** Runs `op_insert_movie` inside an open transaction. */
+static db_result register_movie_in_transaction(const db_conn conn, struct movie *NONNULL movie) {
+    const size_t genres = list_len(movie->genres);
+
     // add all movie genres to db
-    for (const char *NULLABLE const *genre = movie->genres; *genre != NULL; genre++) {
-        int rv = sqlite3_bind_text(conn.op_insert_genre, 1, *genre, -1, SQLITE_STATIC);
+    for (size_t i = 0; i < genres; i++) {
+        int rv = sqlite3_bind_text(conn.op_insert_genre, 1, movie->genres[i], -1, SQLITE_STATIC);
         if unlikely (rv != SQLITE_OK) {
             sqlite3_clear_bindings(conn.op_insert_genre);
             return check_result(rv, sqlite3_reset(conn.op_insert_genre));
@@ -655,10 +676,10 @@ static db_result register_movie_in_transaction(db_conn conn, struct movie *NONNU
     }
 
     // link movie to the genres
-    for (const char *NULLABLE const *genre = movie->genres; *genre != NULL; genre++) {
+    for (size_t i = 0; i < genres; i++) {
         int rvv[2] = {SQLITE_OK, SQLITE_OK};
         rvv[0] = sqlite3_bind_int64(conn.op_insert_genre_link, 1, movie->id);
-        rvv[1] = sqlite3_bind_text(conn.op_insert_genre_link, 2, *genre, -1, SQLITE_STATIC);
+        rvv[1] = sqlite3_bind_text(conn.op_insert_genre_link, 2, movie->genres[i], -1, SQLITE_STATIC);
         if unlikely (rvv[0] != SQLITE_OK || rvv[1] != SQLITE_OK) {
             sqlite3_clear_bindings(conn.op_insert_genre_link);
             return check_results(2, rvv, sqlite3_reset(conn.op_insert_genre_link));
@@ -687,6 +708,88 @@ db_result
     res = register_movie_in_transaction(*conn, movie);
     if unlikely (res != DB_SUCCESS) {
         errmsg_dup_db(errmsg, conn->db);
+        db_transaction_rollback(conn, NULL);
+        return res;
+    }
+
+    return db_transaction_commit(conn, errmsg);
+}
+
+[[gnu::regcall, gnu::nonnull(3)]]
+/** Runs `op_insert_genre_link` inside an open transaction. */
+static db_result add_movie_in_transaction(
+    const db_conn conn,
+    size_t len,
+    const char *NONNULL const genres[NONNULL restrict len],
+    int64_t movie_id
+) {
+    for (size_t i = 0; i < len; i++) {
+        int rv1 = sqlite3_bind_int64(conn.op_insert_genre_link, 1, movie_id);
+        int rv2 = sqlite3_bind_text(conn.op_insert_genre_link, 2, genres[i], -1, SQLITE_STATIC);
+        if unlikely (rv1 != SQLITE_OK || rv2 != SQLITE_OK) {
+            sqlite3_clear_bindings(conn.op_insert_genre_link);
+            return check_results(2, (int[2]) {rv1, rv2}, sqlite3_reset(conn.op_insert_genre_link));
+        }
+
+        db_result res = db_eval_stmt(conn.op_insert_genre_link);
+        if unlikely (res != DB_SUCCESS) {
+            return res;
+        }
+    }
+    return DB_SUCCESS;
+}
+
+/** More descriptive message for specific user errors in `db_add_genres`. */
+static void errmsg_explain_add_genres_error(
+    const char *NONNULL errmsg[NULLABLE restrict 1],
+    sqlite3 *NONNULL db,
+    int64_t movie_id
+) {
+    if unlikely (errmsg == NULL) {
+        return;
+    }
+
+    constexpr size_t buflen = 128;
+    char buffer[buflen] = "";
+    switch (sqlite3_extended_errcode(db)) {
+        case SQLITE_CONSTRAINT_FOREIGNKEY: {
+            int rv = snprintf(buffer, buflen, "no movie with id = %" PRIi64 " found in the database", movie_id);
+            *errmsg = errmsg_dup(likely(rv > 0) ? buffer : NULL);
+            break;
+        }
+        case SQLITE_CONSTRAINT_UNIQUE: {
+            int rv = snprintf(buffer, buflen, "movie with id = %" PRIi64 " already has the provided genre", movie_id);
+            *errmsg = errmsg_dup(likely(rv > 0) ? buffer : NULL);
+            break;
+        }
+        default: {
+            errmsg_dup_db(errmsg, db);
+            break;
+        }
+    }
+}
+
+/** Adds a list of genres tp an existing movie. */
+db_result db_add_genres(
+    db_conn *NONNULL conn,
+    int64_t movie_id,
+    const char *NULLABLE const genres[NONNULL restrict],
+    const char *NONNULL errmsg[NULLABLE restrict 1]
+) {
+    const size_t len = list_len(genres);
+    if unlikely (len == 0) {
+        errmsg_dup_str(errmsg, "empty list of genres to add, operation ignored");
+        return DB_USER_ERROR;
+    }
+
+    db_result res = db_transaction_begin(conn, errmsg);
+    if unlikely (res != DB_SUCCESS) {
+        return res;
+    }
+
+    res = add_movie_in_transaction(*conn, len, genres, movie_id);
+    if unlikely (res != DB_SUCCESS) {
+        errmsg_explain_add_genres_error(errmsg, conn->db, movie_id);
         db_transaction_rollback(conn, NULL);
         return res;
     }

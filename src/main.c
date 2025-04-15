@@ -36,6 +36,16 @@ static void run(db_conn *NONNULL conn) {
     }
 
     printf("Movie id: %" PRIi64 "\n", movie->id);
+
+    res = db_add_genres(conn, movie->id, (const char *[2]) {"Sci-Fi", NULL}, &error);
+    if unlikely (res != DB_SUCCESS) {
+        print_error("add_genres", error);
+    }
+
+    res = db_add_genres(conn, 0, (const char *[2]) {"Sci-Fi", NULL}, &error);
+    if unlikely (res != DB_SUCCESS) {
+        print_error("add_genres", error);
+    }
 }
 
 extern int main(void) {
