@@ -39,12 +39,22 @@ static void run(db_conn *NONNULL conn) {
 
     res = db_add_genres(conn, movie->id, (const char *[2]) {"Sci-Fi", NULL}, &error);
     if unlikely (res != DB_SUCCESS) {
-        print_error("add_genres", error);
+        print_error("add genres", error);
     }
 
     res = db_add_genres(conn, 0, (const char *[2]) {"Sci-Fi", NULL}, &error);
     if unlikely (res != DB_SUCCESS) {
-        print_error("add_genres", error);
+        print_error("add genres", error);
+    }
+
+    res = db_delete_movie(conn, movie->id, &error);
+    if unlikely (res != DB_SUCCESS) {
+        print_error("delete movie", error);
+    }
+
+    res = db_delete_movie(conn, movie->id, &error);
+    if unlikely (res != DB_SUCCESS) {
+        print_error("delete movie", error);
     }
 }
 

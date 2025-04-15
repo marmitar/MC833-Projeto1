@@ -9,7 +9,10 @@
 /** Opaque handle to a database connection. */
 typedef struct database_connection db_conn;
 
-[[gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
+/** Output error messages, never nullable. */
+typedef const char *NONNULL message;
+
+[[nodiscard, gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
  * Create or migrate database at `filepath`.
  *
@@ -19,7 +22,7 @@ typedef struct database_connection db_conn;
  * @note The caller is responsible for eventually calling `db_close` to release resources and `db_free_errmsg` to free
  *      any error message.
  */
-bool db_setup(const char filepath[NONNULL restrict], const char *NONNULL errmsg[NULLABLE 1]);
+bool db_setup(const char filepath[NONNULL restrict], message *NULLABLE restrict errmsg);
 
 [[gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
@@ -28,9 +31,9 @@ bool db_setup(const char filepath[NONNULL restrict], const char *NONNULL errmsg[
  * This function releases the memory allocated for the error message returned by any database function. If `errmsg` is
  * NULL, no action is taken. After calling this function, `errmsg` becomes invalid.
  */
-void db_free_errmsg(const char *NONNULL errmsg);
+void db_free_errmsg(message errmsg);
 
-[[gnu::regcall, gnu::malloc, gnu::nonnull(1), nodiscard, gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard, gnu::regcall, gnu::malloc, gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Connects to the existing database at `filepath`.
  *
@@ -40,7 +43,7 @@ void db_free_errmsg(const char *NONNULL errmsg);
  * @note The caller is responsible for eventually calling `db_close` to release resources and `db_free_errmsg` to free
  *      any error message.
  */
-db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], const char *NONNULL errmsg[NULLABLE 1]);
+db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], message *NULLABLE restrict errmsg);
 
 [[gnu::regcall, gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
@@ -51,7 +54,7 @@ db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], const char *
  *
  * @note The caller must also call `db_free_errmsg` if an error message is set.
  */
-bool db_disconnect(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]);
+bool db_disconnect(db_conn *NONNULL conn, message *NULLABLE errmsg);
 
 /** Possible results for database operations. */
 typedef enum db_result {
@@ -91,32 +94,41 @@ struct movie_summary {
     char title[];
 };
 
-[[gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard, gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Registers a new movie in the database. Updates the `id` field of `movie` if successful.
  *
- * If the `id` field of `movie` is 0, a new record is created, and an ID is generated.
- * The `movie->genres` array (if provided) will be inserted into the `genres` table.
+ * If the `id` field of `movie` is 0, a new record is created, and an ID is generated. The `movie->genres` array
+ (if provided) will be inserted into the `genres` table.
  *
- * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and,
- * if `errmsg` is provided, stores an error message there.
+ * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
+ stores an error message there.
  */
-db_result db_register_movie(db_conn *NONNULL conn, struct movie *NONNULL movie, const char *NONNULL errmsg[NULLABLE 1]);
+db_result db_register_movie(db_conn *NONNULL conn, struct movie *NONNULL movie, message *NULLABLE restrict errmsg);
 
-[[gnu::regcall, gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard, gnu::regcall, gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Adds new genres from a NULL terminated list to an existing movie.
  *
  * Ensures the movie exists and the genre is new to that movie. If required, also creates a entry for the genre itself.
  *
- * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and,
- * if `errmsg` is provided, stores an error message there.
+ * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
+ stores an error message there.
  */
 db_result db_add_genres(
     db_conn *NONNULL conn,
     int64_t movie_id,
     const char *NULLABLE const genres[NONNULL restrict],
-    const char *NONNULL errmsg[NULLABLE restrict 1]
+    message *NULLABLE restrict errmsg
 );
+
+[[nodiscard, gnu::regcall, gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
+/**
+ * Removes a movie from the database.
+ *
+ * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
+ stores an error message there.
+ */
+db_result db_delete_movie(db_conn *NONNULL conn, int64_t movie_id, message *NULLABLE restrict errmsg);
 
 #endif  // SRC_DATABASE_H

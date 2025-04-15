@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -20,7 +21,7 @@ static const char ATEXIT_NOT_REGISTERED_ERROR[] = "could not call at_exit";
 
 [[gnu::cold, gnu::const, nodiscard]]
 /** Predefined error messages, which are NOT dynamically allocated and should not be free. */
-static inline bool is_predefined_errmsg(const char *NULLABLE error_message) {
+static inline bool is_predefined_errmsg(const char *NULLABLE const error_message) {
     return error_message == UNKNOWN_ERROR || error_message == OUT_OF_MEMORY_ERROR
         || error_message == ATEXIT_NOT_REGISTERED_ERROR;
 }
@@ -50,7 +51,7 @@ static const char *NONNULL errmsg_dup(const char *NULLABLE error_message) {
 
 [[gnu::cold]]
 /** Copies the current SQLite error message from `str` into `errmsg`, if non-NULL. */
-static void errmsg_dup_str(const char *NONNULL errmsg[NULLABLE 1], const char str[NONNULL restrict]) {
+static void errmsg_dup_str(message *NULLABLE restrict errmsg, const char str[NULLABLE restrict]) {
     if likely (errmsg != NULL) {
         *errmsg = errmsg_dup(str);
     }
@@ -58,14 +59,40 @@ static void errmsg_dup_str(const char *NONNULL errmsg[NULLABLE 1], const char st
 
 [[gnu::cold]]
 /** Copies the current SQLite error message from `db` into `errmsg`, if non-NULL. */
-static void errmsg_dup_db(const char *NONNULL errmsg[NULLABLE 1], sqlite3 *NULLABLE db) {
+static void errmsg_dup_db(message *NULLABLE errmsg, sqlite3 *NULLABLE db) {
     errmsg_dup_str(errmsg, sqlite3_errmsg(db));
 }
 
 [[gnu::cold]]
 /** Copies the SQLite error string for the error code `rc` into `errmsg`, if non-NULL. */
-static void errmsg_dup_rc(const char *NONNULL errmsg[NULLABLE 1], const int rc) {
+static void errmsg_dup_rc(message *NULLABLE errmsg, const int rc) {
     errmsg_dup_str(errmsg, sqlite3_errstr(rc));
+}
+
+[[gnu::format(printf, 3, 4), gnu::nonnull(3)]]
+/** Builds a formatted error message for expected user errors. */
+static void errmsg_printf(message *NULLABLE errmsg, const size_t bufsize, const char *NONNULL restrict format, ...) {
+    if unlikely (errmsg == NULL) {
+        return;
+    }
+
+    char *error_message = calloc(bufsize, sizeof(char));
+    if unlikely (error_message == NULL) {
+        *errmsg = OUT_OF_MEMORY_ERROR;
+        return;
+    }
+
+    va_list args;
+    va_start(args, format);
+    const int rv = vsnprintf(error_message, bufsize, format, args);
+    va_end(args);
+
+    if likely (rv > 0) {
+        *errmsg = error_message;
+    } else {
+        *errmsg = UNKNOWN_ERROR;
+        free(error_message);
+    }
 }
 
 /** Frees a dynamically allocated error message string. */
@@ -80,7 +107,7 @@ void db_free_errmsg(const char *NONNULL errmsg) {
 /**
  * Closes an open SQLite3 database connection, free resources and set `errmsg`, if necessary.
  */
-static bool db_close(sqlite3 *NULLABLE db, const char *NONNULL errmsg[NULLABLE 1]) {
+static bool db_close(sqlite3 *NULLABLE db, message *NULLABLE errmsg) {
     const int rv = sqlite3_close(db);  // safe to call with NULL
     if likely (rv == SQLITE_OK) {
         return true;
@@ -102,7 +129,7 @@ static bool db_close(sqlite3 *NULLABLE db, const char *NONNULL errmsg[NULLABLE 1
  * Open a database at `filepath`, either connecting to an existing database or creating a new one whe `create` is true.
  */
 static sqlite3 *
-    NULLABLE db_open(const char filepath[NONNULL restrict], const char *NONNULL errmsg[NULLABLE 1], bool create) {
+    NULLABLE db_open(const char filepath[NONNULL restrict], message *NULLABLE restrict errmsg, bool create) {
     const int FLAGS = SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_PRIVATECACHE | SQLITE_OPEN_EXRESCODE;
 
     sqlite3 *db = NULL;
@@ -127,7 +154,7 @@ static void db_shutdown(void) {
 
 [[gnu::cold]]
 /** Apply schema from SQL file. */
-static bool db_create_schema(sqlite3 *NONNULL db, const char *NONNULL errmsg[NULLABLE 1]) {
+static bool db_create_schema(sqlite3 *NONNULL db, message *NULLABLE errmsg) {
     char *errorbuf = NULL;  // will be allocated via sqlite3_malloc, need to copied to std malloc
 
     int rv = sqlite3_exec(db, SCHEMA, nullptr, nullptr, (errmsg != NULL) ? &errorbuf : NULL);
@@ -141,7 +168,7 @@ static bool db_create_schema(sqlite3 *NONNULL db, const char *NONNULL errmsg[NUL
 }
 
 /** Create or migrate database at `filepath`. */
-bool db_setup(const char filepath[NONNULL restrict], const char *NONNULL errmsg[NULLABLE 1]) {
+bool db_setup(const char filepath[NONNULL restrict], message *NULLABLE restrict errmsg) {
     int rv = sqlite3_initialize();
     if unlikely (rv != SQLITE_OK) {
         errmsg_dup_rc(errmsg, rv);
@@ -213,7 +240,7 @@ static sqlite3_stmt *NULLABLE db_prepare(
     size_t len,
     const char sql[NONNULL restrict len],
     bool *NONNULL has_error,  // shared error flag, for creating multiple statements in series
-    const char *NULLABLE errmsg[NULLABLE 1]
+    message *NULLABLE restrict errmsg
 ) {
     assert(len < INT_MAX);
     assert(len == strlen(sql));
@@ -240,7 +267,7 @@ static sqlite3_stmt *NULLABLE db_prepare(
 
 [[gnu::regcall, gnu::nonnull(1)]]
 /** Create all used statements beforehand, for faster reuse later. */
-static bool db_prepare_stmts(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]) {
+static bool db_prepare_stmts(db_conn *NONNULL conn, message *NULLABLE errmsg) {
     sqlite3 *NONNULL db = conn->db;
     bool has_error = false;
 
@@ -351,7 +378,7 @@ static bool db_prepare_stmts(db_conn *NONNULL conn, const char *NONNULL errmsg[N
 }
 
 /** Connects to the existing database at `filepath`. */
-db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], const char *NONNULL errmsg[NULLABLE 1]) {
+db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], message *NULLABLE restrict errmsg) {
     db_conn *conn = calloc(1, sizeof(struct database_connection));
     if unlikely (conn == NULL) {
         errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
@@ -383,12 +410,7 @@ db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], const char *
 
 [[gnu::regcall, gnu::nonnull(1, 2, 3)]]
 /** Closes a prepared statement. Used during disconnect. */
-static void db_finalize(
-    sqlite3 *NONNULL db,
-    sqlite3_stmt *NONNULL stmt,
-    bool *NONNULL ok,
-    const char *NONNULL errmsg[NULLABLE 1]
-) {
+static void db_finalize(sqlite3 *NONNULL db, sqlite3_stmt *NONNULL stmt, bool *NONNULL ok, message *NULLABLE errmsg) {
     int rv = sqlite3_finalize(stmt);
     if unlikely (rv != SQLITE_OK) {
         // set errmsg on the first error only
@@ -400,7 +422,7 @@ static void db_finalize(
 }
 
 /** Disconnects to the database and free resources. */
-bool db_disconnect(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]) {
+bool db_disconnect(db_conn *NONNULL conn, message *NULLABLE errmsg) {
     bool ok = true;
     sqlite3 *db = conn->db;
     db_finalize(db, conn->op_begin, &ok, errmsg);
@@ -571,8 +593,7 @@ static db_result check_results(size_t n, const int rv[NONNULL const n], const in
 
 [[gnu::regcall, gnu::nonnull(1, 2), gnu::hot]]
 /** Runs a single transaction statement and reset it. */
-static db_result
-    db_transaction_op(db_conn *NONNULL conn, sqlite3_stmt *NONNULL stmt, const char *NONNULL errmsg[NULLABLE 1]) {
+static db_result db_transaction_op(db_conn *NONNULL conn, sqlite3_stmt *NONNULL stmt, message *NULLABLE errmsg) {
     int rv = sqlite3_step(stmt);
     int rrv = sqlite3_reset(stmt);
     if unlikely (rv != SQLITE_DONE || rrv != SQLITE_OK) {
@@ -584,19 +605,19 @@ static db_result
 
 [[gnu::regcall, gnu::nonnull(1), gnu::hot]]
 /** Runs `BEGIN TRANSACTION`. */
-static db_result db_transaction_begin(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]) {
+static db_result db_transaction_begin(db_conn *NONNULL conn, message *NULLABLE errmsg) {
     return db_transaction_op(conn, conn->op_begin, errmsg);
 }
 
 [[gnu::regcall, gnu::nonnull(1)]]
 /** Runs `ROLLBACK TRANSACTION`. */
-static db_result db_transaction_rollback(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]) {
+static db_result db_transaction_rollback(db_conn *NONNULL conn, message *NULLABLE errmsg) {
     return db_transaction_op(conn, conn->op_rollback, errmsg);
 }
 
 [[gnu::regcall, gnu::nonnull(1), gnu::hot]]
 /** Runs `COMMIT TRANSACTION`. */
-static db_result db_transaction_commit(db_conn *NONNULL conn, const char *NONNULL errmsg[NULLABLE 1]) {
+static db_result db_transaction_commit(db_conn *NONNULL conn, message *NULLABLE errmsg) {
     return db_transaction_op(conn, conn->op_commit, errmsg);
 }
 
@@ -695,8 +716,7 @@ static db_result register_movie_in_transaction(const db_conn conn, struct movie 
 }
 
 /** Registers a new movie and updates its 'id' if successful. */
-db_result
-    db_register_movie(db_conn *NONNULL conn, struct movie *NONNULL movie, const char *NONNULL errmsg[NULLABLE 1]) {
+db_result db_register_movie(db_conn *NONNULL conn, struct movie *NONNULL movie, message *NULLABLE restrict errmsg) {
     assert(movie != NULL);
     assert(movie->id == 0);
 
@@ -717,7 +737,7 @@ db_result
 
 [[gnu::regcall, gnu::nonnull(3)]]
 /** Runs `op_insert_genre_link` inside an open transaction. */
-static db_result add_movie_in_transaction(
+static db_result add_genres_in_transaction(
     const db_conn conn,
     size_t len,
     const char *NONNULL const genres[NONNULL restrict len],
@@ -739,42 +759,12 @@ static db_result add_movie_in_transaction(
     return DB_SUCCESS;
 }
 
-/** More descriptive message for specific user errors in `db_add_genres`. */
-static void errmsg_explain_add_genres_error(
-    const char *NONNULL errmsg[NULLABLE restrict 1],
-    sqlite3 *NONNULL db,
-    int64_t movie_id
-) {
-    if unlikely (errmsg == NULL) {
-        return;
-    }
-
-    constexpr size_t buflen = 128;
-    char buffer[buflen] = "";
-    switch (sqlite3_extended_errcode(db)) {
-        case SQLITE_CONSTRAINT_FOREIGNKEY: {
-            int rv = snprintf(buffer, buflen, "no movie with id = %" PRIi64 " found in the database", movie_id);
-            *errmsg = errmsg_dup(likely(rv > 0) ? buffer : NULL);
-            break;
-        }
-        case SQLITE_CONSTRAINT_UNIQUE: {
-            int rv = snprintf(buffer, buflen, "movie with id = %" PRIi64 " already has the provided genre", movie_id);
-            *errmsg = errmsg_dup(likely(rv > 0) ? buffer : NULL);
-            break;
-        }
-        default: {
-            errmsg_dup_db(errmsg, db);
-            break;
-        }
-    }
-}
-
 /** Adds a list of genres tp an existing movie. */
 db_result db_add_genres(
     db_conn *NONNULL conn,
     int64_t movie_id,
     const char *NULLABLE const genres[NONNULL restrict],
-    const char *NONNULL errmsg[NULLABLE restrict 1]
+    message *NULLABLE restrict errmsg
 ) {
     const size_t len = list_len(genres);
     if unlikely (len == 0) {
@@ -787,12 +777,52 @@ db_result db_add_genres(
         return res;
     }
 
-    res = add_movie_in_transaction(*conn, len, genres, movie_id);
-    if unlikely (res != DB_SUCCESS) {
-        errmsg_explain_add_genres_error(errmsg, conn->db, movie_id);
-        db_transaction_rollback(conn, NULL);
+    res = add_genres_in_transaction(*conn, len, genres, movie_id);
+    if likely (res == DB_SUCCESS) {
+        return db_transaction_commit(conn, errmsg);
         return res;
     }
 
-    return db_transaction_commit(conn, errmsg);
+    switch (sqlite3_extended_errcode(conn->db)) {
+        case SQLITE_CONSTRAINT_FOREIGNKEY:
+            errmsg_printf(errmsg, 128, "no movie with id = %" PRIi64 " found in the database", movie_id);
+            break;
+        case SQLITE_CONSTRAINT_UNIQUE:
+            errmsg_printf(errmsg, 128, "movie with id = %" PRIi64 " already has the provided genre", movie_id);
+            break;
+        default: {
+            errmsg_dup_db(errmsg, conn->db);
+            break;
+        }
+    }
+    db_transaction_rollback(conn, NULL);
+    return res;
+}
+
+[[gnu::regcall]]
+/** Runs `op_delete_movie` inside its automatic transaction. */
+static db_result remove_movie_in_transaction(const db_conn conn, int64_t movie_id) {
+    int rv = sqlite3_bind_int64(conn.op_delete_movie, 1, movie_id);
+    if unlikely (rv != SQLITE_OK) {
+        sqlite3_clear_bindings(conn.op_delete_movie);
+        return check_result(rv, sqlite3_reset(conn.op_delete_movie));
+    }
+
+    return db_eval_stmt(conn.op_delete_movie);
+}
+
+/** Removes a movie from the database. */
+db_result db_delete_movie(db_conn *NONNULL conn, int64_t movie_id, message *NULLABLE errmsg) {
+    // no need to create an explicit transaction for a single statement
+    const db_result res = remove_movie_in_transaction(*conn, movie_id);
+    if unlikely (res != DB_SUCCESS) {
+        errmsg_dup_db(errmsg, conn->db);
+        return res;
+    }
+
+    if (sqlite3_changes64(conn->db) < 1) {
+        errmsg_printf(errmsg, 128, "no movie with id = %" PRIi64 " to be deleted from the database", movie_id);
+        return DB_USER_ERROR;
+    }
+    return DB_SUCCESS;
 }
