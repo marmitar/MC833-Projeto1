@@ -13,10 +13,13 @@
  * @see https://clang.llvm.org/docs/AttributeReference.html#nonnull
  */
 #    define NONNULL _Nonnull
+// For completeness.
+#    define UNSPECIFIED _Null_unspecified
 #else
 // These pointer modifiers are specific to Clang, and are left as comments for readers on GCC.
 #    define NULLABLE
 #    define NONNULL
+#    define UNSPECIFIED
 #endif
 
 /**

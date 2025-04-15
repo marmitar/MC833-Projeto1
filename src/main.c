@@ -17,6 +17,11 @@ static void print_error(const char operation[NONNULL const], const char *NONNULL
 #undef RESET
 }
 
+bool show([[maybe_unused]] void *data, const struct movie *NONNULL movie) {
+    printf("%s\n", movie->title);
+    return false;
+}
+
 [[gnu::nonnull(1), gnu::hot]]
 static void run(db_conn *NONNULL conn) {
     struct movie *movie = alloca(offsetof(struct movie, genres) + 3 * sizeof(const char *));
@@ -42,14 +47,42 @@ static void run(db_conn *NONNULL conn) {
         print_error("add genres", error);
     }
 
+    res = db_add_genres(conn, movie->id, (const char *[2]) {"Fiction", NULL}, &error);
+    if unlikely (res != DB_SUCCESS) {
+        print_error("add genres", error);
+    }
+
     res = db_add_genres(conn, 0, (const char *[2]) {"Sci-Fi", NULL}, &error);
     if unlikely (res != DB_SUCCESS) {
         print_error("add genres", error);
     }
 
+    struct movie *out = NULL;
+    res = db_get_movie(conn, movie->id, &out, &error);
+    if unlikely (res != DB_SUCCESS) {
+        print_error("get movie", error);
+    } else {
+        printf("MOVIE: id=%" PRIi64 ", title=%s\n", out->id, out->title);
+        for (const char **g = out->genres; *g != NULL; g++) {
+            printf("GENRE: %s\n", *g);
+        }
+        free(out);
+    }
+
     res = db_delete_movie(conn, movie->id, &error);
     if unlikely (res != DB_SUCCESS) {
         print_error("delete movie", error);
+    }
+
+    res = db_get_movie(conn, movie->id, &out, &error);
+    if unlikely (res != DB_SUCCESS) {
+        print_error("get movie", error);
+    } else {
+        printf("MOVIE: id=%" PRIi64 ", title=%s\n", out->id, out->title);
+        for (const char **g = out->genres; *g != NULL; g++) {
+            printf("GENRE: %s\n", *g);
+        }
+        free(out);
     }
 
     res = db_delete_movie(conn, movie->id, &error);

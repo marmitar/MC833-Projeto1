@@ -33,7 +33,7 @@ bool db_setup(const char filepath[NONNULL restrict], message *NULLABLE restrict 
  */
 void db_free_errmsg(message errmsg);
 
-[[nodiscard, gnu::regcall, gnu::malloc, gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard, gnu::regcall, gnu::malloc, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**
  * Connects to the existing database at `filepath`.
  *
@@ -45,7 +45,7 @@ void db_free_errmsg(message errmsg);
  */
 db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], message *NULLABLE restrict errmsg);
 
-[[gnu::regcall, gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[gnu::regcall, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**
  * Closes an open database connection.
  *
@@ -130,5 +130,18 @@ db_result db_add_genres(
  stores an error message there.
  */
 db_result db_delete_movie(db_conn *NONNULL conn, int64_t movie_id, message *NULLABLE restrict errmsg);
+
+/**
+ * Get a movie from the database.
+ *
+ * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
+ stores an error message there.
+ */
+db_result db_get_movie(
+    db_conn *NONNULL conn,
+    int64_t movie_id,
+    struct movie *NONNULL *NONNULL movie,
+    message *NULLABLE restrict errmsg
+);
 
 #endif  // SRC_DATABASE_H

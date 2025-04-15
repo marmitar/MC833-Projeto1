@@ -6,6 +6,7 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <stdckdint.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -39,13 +40,12 @@ static const char *NONNULL errmsg_dup(const char *NULLABLE error_message) {
     }
 
     const size_t len = strlen(error_message);
-    char *copy = calloc(len + 1, sizeof(char));
+    char *copy = malloc((len + 1) * sizeof(char));
     if unlikely (copy == NULL) {
         return OUT_OF_MEMORY_ERROR;
     }
 
     memcpy(copy, error_message, len * sizeof(char));
-    copy[len] = '\0';  // just to be sure
     return copy;
 }
 
@@ -76,7 +76,7 @@ static void errmsg_printf(message *NULLABLE errmsg, const size_t bufsize, const 
         return;
     }
 
-    char *error_message = calloc(bufsize, sizeof(char));
+    char *error_message = malloc(bufsize * sizeof(char));
     if unlikely (error_message == NULL) {
         *errmsg = OUT_OF_MEMORY_ERROR;
         return;
@@ -200,6 +200,104 @@ bool db_setup(const char filepath[NONNULL restrict], message *NULLABLE restrict 
 }
 
 /**
+ * Internal buffer for string output.
+ *
+ * Each buffer holds multiple NUL terminated strings. The strings contents are modifiable, but cannot be increased
+ * in-place. A new string slice must be re
+ */
+struct string_buffer {
+    /** Current allocated size for `data`. */
+    size_t capacity;
+    /** Currently in use part of the buffer. */
+    size_t in_use;
+    /** Modifiable shared string. */
+    char *NONNULL restrict data;
+};
+
+static const constexpr size_t BUFFER_PAGE_SIZE = 4096;
+static_assert(BUFFER_PAGE_SIZE > 0);
+
+[[gnu::regcall, gnu::malloc]]
+/** Allocates initial memory for a string buffer. */
+static struct string_buffer *NULLABLE string_buffer_alloc(void) {
+    struct string_buffer *buffer = calloc(1, sizeof(struct string_buffer));
+    if unlikely (buffer == NULL) {
+        return NULL;
+    }
+
+    char *data = malloc(BUFFER_PAGE_SIZE * sizeof(char));
+    if unlikely (data == NULL) {
+        free(buffer);
+        return NULL;
+    }
+
+    buffer->data = data;
+    buffer->capacity = BUFFER_PAGE_SIZE;
+    buffer->in_use = 0;
+    return buffer;
+}
+
+[[gnu::regcall, gnu::nonnull(1)]]
+/** Release memory used for buffer. */
+static void string_buffer_free(struct string_buffer *NONNULL buffer) {
+    free(buffer->data);
+    memset(buffer, 0, sizeof(struct string_buffer));
+    free(buffer);
+}
+
+[[gnu::const]]
+/** Calculates $ceil(a / b)$. */
+static inline size_t ceil_div(size_t a, size_t b) {
+    return unlikely(a == 0) ? 0 : 1 + ((a - 1) / b);
+}
+
+[[gnu::regcall, gnu::nonnull(1)]]
+/**
+ * Request an allocated slice in string buffer.
+ *
+ * Returns the index for the slice, or `SIZE_MAX` if a slice of `size` bytes could be generated.
+ */
+static size_t string_buffer_slice(struct string_buffer *NONNULL buffer, size_t size) {
+    assert(buffer->capacity >= buffer->in_use);
+    if unlikely (size == SIZE_MAX) {
+        return SIZE_MAX;
+    }
+
+    const size_t actual_size = size + 1;
+    if likely (buffer->capacity - buffer->in_use >= actual_size) {
+        size_t slice = buffer->in_use;
+        buffer->in_use += actual_size;
+        return slice;
+    }
+
+    size_t final_size = 0;
+    if unlikely (ckd_add(&final_size, buffer->in_use, actual_size)) {
+        return SIZE_MAX;
+    }
+    assert(final_size > buffer->in_use);
+
+    const size_t alloc_pages = ceil_div(final_size, BUFFER_PAGE_SIZE);
+    const size_t final_capacity = alloc_pages * BUFFER_PAGE_SIZE;
+
+    char *data = realloc(buffer->data, final_capacity * sizeof(char));
+    if unlikely (data == NULL) {
+        return SIZE_MAX;
+    }
+
+    buffer->data = data;
+    buffer->capacity = final_capacity;
+    size_t slice = buffer->in_use;
+    buffer->in_use += actual_size;
+    return slice;
+}
+
+[[gnu::regcall, gnu::nonnull(1)]]
+/** Reset the buffer to no data in use. */
+static inline void string_buffer_reset(struct string_buffer *NONNULL buffer) {
+    buffer->in_use = 0;
+}
+
+/**
  * A connection to the database file, which is a SQLite3 connection with cached statements.
  */
 struct database_connection {
@@ -231,6 +329,8 @@ struct database_connection {
     sqlite3_stmt *NONNULL op_select_movie;
     /** List all genres for a single movie. */
     sqlite3_stmt *NONNULL op_select_movie_genres;
+    /** Internal buffer for string output. */
+    struct string_buffer *NONNULL restrict text_buffer;
 };
 
 [[gnu::regcall, gnu::malloc, gnu::nonnull(1, 3, 4)]]
@@ -275,7 +375,7 @@ static bool db_prepare_stmts(db_conn *NONNULL conn, message *NULLABLE errmsg) {
 #define SQL(...)   SQL_(STR(__VA_ARGS__))
 #define SQL_(stmt) db_prepare(db, strlen(stmt), stmt, &has_error, errmsg)
     sqlite3_stmt *begin = SQL(
-        BEGIN TRANSACTION;
+        BEGIN DEFERRED TRANSACTION;
     );
     sqlite3_stmt *commit = SQL(
         COMMIT TRANSACTION;
@@ -319,11 +419,11 @@ static bool db_prepare_stmts(db_conn *NONNULL conn, message *NULLABLE errmsg) {
             FROM movie;
     );
     sqlite3_stmt *select_all_movies = SQL(
-        SELECT *
+        SELECT id, title, director, release_year
             FROM movie;
     );
     sqlite3_stmt *select_movie = SQL(
-        SELECT *
+        SELECT id, title, director, release_year
             FROM movie
             WHERE id = :movie;
     );
@@ -385,16 +485,26 @@ db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], message *NUL
         return NULL;
     }
 
+    struct string_buffer *text_buffer = string_buffer_alloc();
+    if unlikely (text_buffer == NULL) {
+        errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
+        free(conn);
+        return NULL;
+    }
+
     sqlite3 *db = db_open(filepath, errmsg, false);
     if unlikely (db == NULL) {
         // `db_open` already sets `errmsg`
+        string_buffer_free(text_buffer);
         free(conn);
         return NULL;
     }
 
     conn->db = db;
+    conn->text_buffer = text_buffer;
     const bool ok = db_prepare_stmts(conn, errmsg);
     if unlikely (!ok) {
+        string_buffer_free(text_buffer);
         db_close(db, NULL);
         free(conn);
         return NULL;
@@ -744,6 +854,19 @@ static db_result add_genres_in_transaction(
     int64_t movie_id
 ) {
     for (size_t i = 0; i < len; i++) {
+        int rv = sqlite3_bind_text(conn.op_insert_genre, 1, genres[i], -1, SQLITE_STATIC);
+        if unlikely (rv != SQLITE_OK) {
+            sqlite3_clear_bindings(conn.op_insert_genre);
+            return check_result(rv, sqlite3_reset(conn.op_insert_genre));
+        }
+
+        db_result res = db_eval_stmt(conn.op_insert_genre);
+        if unlikely (res != DB_SUCCESS) {
+            return res;
+        }
+    }
+
+    for (size_t i = 0; i < len; i++) {
         int rv1 = sqlite3_bind_int64(conn.op_insert_genre_link, 1, movie_id);
         int rv2 = sqlite3_bind_text(conn.op_insert_genre_link, 2, genres[i], -1, SQLITE_STATIC);
         if unlikely (rv1 != SQLITE_OK || rv2 != SQLITE_OK) {
@@ -780,7 +903,6 @@ db_result db_add_genres(
     res = add_genres_in_transaction(*conn, len, genres, movie_id);
     if likely (res == DB_SUCCESS) {
         return db_transaction_commit(conn, errmsg);
-        return res;
     }
 
     switch (sqlite3_extended_errcode(conn->db)) {
@@ -801,7 +923,7 @@ db_result db_add_genres(
 
 [[gnu::regcall]]
 /** Runs `op_delete_movie` inside its automatic transaction. */
-static db_result remove_movie_in_transaction(const db_conn conn, int64_t movie_id) {
+static db_result delete_movie_in_transaction(const db_conn conn, int64_t movie_id) {
     int rv = sqlite3_bind_int64(conn.op_delete_movie, 1, movie_id);
     if unlikely (rv != SQLITE_OK) {
         sqlite3_clear_bindings(conn.op_delete_movie);
@@ -814,7 +936,7 @@ static db_result remove_movie_in_transaction(const db_conn conn, int64_t movie_i
 /** Removes a movie from the database. */
 db_result db_delete_movie(db_conn *NONNULL conn, int64_t movie_id, message *NULLABLE errmsg) {
     // no need to create an explicit transaction for a single statement
-    const db_result res = remove_movie_in_transaction(*conn, movie_id);
+    const db_result res = delete_movie_in_transaction(*conn, movie_id);
     if unlikely (res != DB_SUCCESS) {
         errmsg_dup_db(errmsg, conn->db);
         return res;
@@ -825,4 +947,222 @@ db_result db_delete_movie(db_conn *NONNULL conn, int64_t movie_id, message *NULL
         return DB_USER_ERROR;
     }
     return DB_SUCCESS;
+}
+
+[[gnu::regcall, gnu::nonnull(1, 2)]]
+/** Insert column text into `buffer` and return the slice position. */
+static size_t get_column_in_slice(struct string_buffer *NONNULL buffer, sqlite3_stmt *NONNULL stmt, int column) {
+    const unsigned char *data = sqlite3_column_text(stmt, column);
+    if unlikely (data == NULL) {
+        return SIZE_MAX;
+    }
+
+    const int bytes = sqlite3_column_bytes(stmt, column);
+    const size_t size = unlikely(bytes < 0) ? strlen((const char *) data) : (size_t) bytes;
+
+    const size_t slice = string_buffer_slice(buffer, size);
+    if unlikely (slice == SIZE_MAX) {
+        return SIZE_MAX;
+    }
+
+    memcpy(buffer->data + slice, data, size);
+    buffer->data[slice + size] = '\0';
+
+    return slice;
+}
+
+[[gnu::regcall, gnu::nonnull(1, 2, 3, 4, 5)]]
+/** Build movie data into `buffer` and correct pointers to `movie`. */
+static db_result get_movie_with_genres(
+    struct string_buffer *NONNULL buffer,
+    sqlite3_stmt *NONNULL outer_stmt,
+    sqlite3_stmt *NONNULL inner_stmt,
+    struct movie *NONNULL *NONNULL movie,
+    size_t *NONNULL genre_count
+) {
+    string_buffer_reset(buffer);
+
+    const int64_t id = sqlite3_column_int64(outer_stmt, 0);
+    const int release_year = sqlite3_column_int(outer_stmt, 3);
+    const size_t director = get_column_in_slice(buffer, outer_stmt, 2);
+    const size_t title = get_column_in_slice(buffer, outer_stmt, 1);
+    // ignore results on allocation issues
+    if unlikely (title == SIZE_MAX || director == SIZE_MAX) {
+        return DB_RUNTIME_ERROR;
+    }
+
+    int rv = sqlite3_bind_int64(inner_stmt, 1, id);
+    if unlikely (rv != SQLITE_OK) {
+        sqlite3_clear_bindings(inner_stmt);
+        return check_result(rv, sqlite3_reset(inner_stmt));
+    }
+
+    const size_t genre_slice = buffer->in_use;
+    size_t count = 0;
+    while ((rv = sqlite3_step(inner_stmt)) == SQLITE_ROW) {
+        const size_t genre = get_column_in_slice(buffer, inner_stmt, 0);
+        if unlikely (genre == SIZE_MAX) {
+            count = SIZE_MAX;
+            break;
+        }
+
+        if likely (count <= SIZE_MAX - 1) {
+            count += 1;
+        }
+    }
+
+    sqlite3_clear_bindings(inner_stmt);
+    int rrv = sqlite3_reset(inner_stmt);
+    if unlikely ((rv != SQLITE_DONE && rv != SQLITE_ROW) || rrv != SQLITE_OK) {
+        return check_result(rv, rrv);
+    }
+
+    constexpr size_t MAX_GENRES = (SIZE_MAX - sizeof(struct movie)) / sizeof(char *);
+    if unlikely (count >= MAX_GENRES) {
+        return DB_RUNTIME_ERROR;
+    }
+
+    if (*genre_count < count) {
+        struct movie *m = realloc(*movie, sizeof(struct movie) + (count + 1) * sizeof(char *));
+        if unlikely (m == NULL) {
+            return DB_RUNTIME_ERROR;
+        }
+
+        *movie = m;
+        *genre_count = count;
+    }
+
+    struct movie *m = *movie;
+    m->id = id;
+    m->title = buffer->data + title;
+    m->director = buffer->data + director;
+    m->release_year = release_year;
+
+    const char *g = buffer->data + genre_slice;
+    for (size_t i = 0; i < count; i++) {
+        m->genres[i] = g;
+        // move to the next string in buffer
+        g += strlen(g) + 1;
+    }
+    m->genres[count] = NULL;
+
+    return DB_SUCCESS;
+}
+
+[[gnu::regcall, gnu::nonnull(1, 2, 3, 4, 5)]]
+/** Iterate over movie entries, calling `callback` on each and returning the final result in `movie`.  */
+static db_result iter_movies(
+    struct string_buffer *NONNULL buffer,
+    sqlite3_stmt *NONNULL outer_stmt,
+    sqlite3_stmt *NONNULL inner_stmt,
+    struct movie *NONNULL *NONNULL movie,
+    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL summary),
+    void *NULLABLE callback_data
+) {
+    size_t genres = 0;
+    struct movie *current_movie = malloc(sizeof(struct movie) + (genres + 1) * sizeof(char *));
+    if unlikely (current_movie == NULL) {
+        return DB_RUNTIME_ERROR;
+    }
+
+    int rv = SQLITE_OK;
+    db_result res = DB_SUCCESS;
+    while ((rv = sqlite3_step(outer_stmt)) == SQLITE_ROW) {
+        res = get_movie_with_genres(buffer, outer_stmt, inner_stmt, &current_movie, &genres);
+        if unlikely (res != DB_SUCCESS) {
+            break;
+        }
+
+        bool stop = callback(callback_data, current_movie);
+        if (stop) {
+            break;
+        }
+    }
+
+    sqlite3_clear_bindings(outer_stmt);
+    int rrv = sqlite3_reset(outer_stmt);
+    if unlikely ((rv != SQLITE_DONE && rv != SQLITE_ROW) || rrv != SQLITE_OK) {
+        free(current_movie);
+        return check_result(rv, rrv);
+    } else if unlikely (res != DB_SUCCESS) {
+        return res;
+    }
+
+    *movie = current_movie;
+    return DB_SUCCESS;
+}
+
+[[gnu::nonnull(1, 2)]]
+/** Count each iteration. */
+static bool count_iterations(void *NONNULL counter, [[maybe_unused]] const struct movie *NONNULL movie) {
+    unsigned *cnt = (unsigned *) counter;
+    (*cnt) += 1;
+    return false;
+}
+
+[[gnu::regcall, gnu::nonnull(3)]]
+/** Read a single movie and write to `movie`. */
+static db_result get_movie_in_transaction(const db_conn conn, int64_t movie_id, struct movie *NONNULL *NONNULL movie) {
+    int rv = sqlite3_bind_int64(conn.op_select_movie, 1, movie_id);
+    if unlikely (rv != SQLITE_OK) {
+        sqlite3_clear_bindings(conn.op_select_movie);
+        return check_result(rv, sqlite3_reset(conn.op_select_movie));
+    }
+
+    unsigned count = 0;
+    db_result res = iter_movies(
+        conn.text_buffer,
+        conn.op_select_movie,
+        conn.op_select_movie_genres,
+        movie,
+        count_iterations,
+        &count
+    );
+
+    if (res != DB_SUCCESS) {
+        return res;
+    } else if (count < 1) {
+        return DB_USER_ERROR;
+    }
+    return DB_SUCCESS;
+}
+
+/** Get a movie from the database. */
+db_result db_get_movie(
+    db_conn *NONNULL conn,
+    int64_t movie_id,
+    struct movie *NONNULL *NONNULL movie,
+    message *NULLABLE restrict errmsg
+) {
+    db_result res = db_transaction_begin(conn, errmsg);
+    if unlikely (res != DB_SUCCESS) {
+        return res;
+    }
+
+    res = get_movie_in_transaction(*conn, movie_id, movie);
+    if likely (res == DB_SUCCESS) {
+        res = db_transaction_commit(conn, errmsg);
+        if unlikely (res != DB_SUCCESS) {
+            free(*movie);
+        }
+        return res;
+    }
+
+    if (sqlite3_extended_errcode(conn->db) != SQLITE_OK) {
+        errmsg_dup_db(errmsg, conn->db);
+    } else {
+        switch (res) {
+            case DB_USER_ERROR:
+                errmsg_printf(errmsg, 128, "no movie with id = %" PRIi64 " found in the database", movie_id);
+                break;
+            case DB_RUNTIME_ERROR:
+                errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
+                break;
+            default:
+                errmsg_dup_str(errmsg, UNKNOWN_ERROR);
+                break;
+        }
+    }
+    db_transaction_rollback(conn, errmsg);
+    return res;
 }
