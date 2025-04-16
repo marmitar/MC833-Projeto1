@@ -253,8 +253,8 @@ foreach option, value : sqlite3_overrides
     sqlite3_flags += [f'-D@option@=@value@']
 endforeach
 
-# # # # # #
-# LIBYAML #
+# # # # # # # #
+# OTHER DEPS  #
 
 libyaml = subproject('libyaml',
         required: true,
@@ -266,7 +266,7 @@ libyaml = subproject('libyaml',
 # # # # # # # # #
 # FINAL BINARY  #
 
-executable('main', files('src/main.c', 'src/database/database.c', 'src/yaml/parser.c', 'src/net/handler.c'),
+executable('main', files('src/main.c', 'src/database/database.c', 'src/net/parser.c', 'src/net/handler.c'),
     include_directories: include_directories('src/'),
     c_args: warnings + optimizations + general_codegen + debugging + sqlite3_flags,
     link_args: linker_options,

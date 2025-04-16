@@ -1,4 +1,3 @@
-#include "./defines.h"
 #include <netinet/in.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -8,6 +7,7 @@
 #include <unistd.h>
 
 #include "./database/database.h"
+#include "./defines.h"
 #include "./net/handler.h"
 
 static constexpr const uint16_t PORT = 12'345;

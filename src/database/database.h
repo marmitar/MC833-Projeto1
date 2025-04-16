@@ -2,10 +2,11 @@
 /** Handles database operations. */
 #define SRC_DATABASE_H
 
-#include "../defines.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include "../defines.h"
 
 /** Opaque handle to a database connection. */
 typedef struct database_connection db_conn;
@@ -58,7 +59,7 @@ db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], message *NUL
 bool db_disconnect(db_conn *NONNULL conn, message *NULLABLE errmsg);
 
 /** Possible results for database operations. */
-typedef enum db_result {
+typedef enum [[gnu::packed]] db_result {
     /** Operation completed without errors. */
     DB_SUCCESS,
     /** Operation was incomplete, but could be retried later. */

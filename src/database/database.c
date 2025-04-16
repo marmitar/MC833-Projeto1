@@ -1,7 +1,6 @@
 /** Database operations. */
 #include "./sqlite_source.h"  // must be included first for defines
 
-#include "../defines.h"
 #include <assert.h>
 #include <inttypes.h>
 #include <limits.h>
@@ -13,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../defines.h"
 #include "./database.h"
 #include "./schema.h"
 
@@ -468,7 +468,7 @@ static bool db_prepare_stmts(db_conn *NONNULL conn, message *NULLABLE errmsg) {
 
 #define set_stmt(name)      \
     assert((name) != NULL); \
-    conn->op_##name = (name)
+    conn->op_##name = (sqlite3_stmt * NONNULL)(name)
 
     set_stmt(begin);
     set_stmt(commit);
@@ -526,6 +526,7 @@ db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], message *NUL
     for (size_t i = 0; i < sizeof(db_conn) / sizeof(void *); i++) {
         const void *const *start = (const void *const *) conn;
         assert(start[i] != NULL);
+        (void) start;
     }
     return conn;
 }

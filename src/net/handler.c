@@ -1,16 +1,25 @@
-
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <yaml.h>
 
+#include "../database/database.h"
+#include "../defines.h"
 #include "./handler.h"
 #include "./parser.h"
-#include "../database/database.h"
 
 [[gnu::regcall]]
+/**
+ * Sends a debug response to the client based on `db_result` and `errmsg`.
+ *
+ * If result == DB_SUCCESS, sends an \"ok\" message. Otherwise, sends the error message and frees it. Returns whether
+ * we encountered a hard error that might force the server to stop.
+ *
+ * @return true if DB_HARD_ERROR was encountered, false otherwise.
+ */
 static bool handle_result(int sock_fd, message errmsg, db_result result) {
     if likely (result == DB_SUCCESS) {
         char ok[] = "server: ok\n";
@@ -29,6 +38,12 @@ static bool handle_result(int sock_fd, message errmsg, db_result result) {
 }
 
 [[gnu::regcall]]
+/**
+ * Sends textual movie data back to the client.
+ *
+ * Formats the fields of `movie` and writes them to the socket. Continues returning false so iteration can keep going,
+ * unless you want to stop after the first record.
+ */
 static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE movie) {
     const int sock_fd = *(const int *) sock_ptr;
 
@@ -38,6 +53,10 @@ static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE movi
         return false;
     }
 
+    // Ideally, we should be a single in-memory buffer and send a single data to the client, as to
+    // - not clog the SQLite database lock
+    // - allow faster communication by the kernel
+    // - integrate better into uring
     char msg[1024] = "movie:\n";
     send(sock_fd, msg, strlen(msg), 0);
     snprintf(msg, 1024, "\tid: %" PRIi64 "\n", movie->id);
@@ -57,6 +76,11 @@ static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE movi
 }
 
 [[gnu::regcall]]
+/**
+ * Sends a single-line summary (id + title) of a movie to the client.
+ *
+ * @return false to keep listing.
+ */
 static bool send_summary(void *NONNULL sock_ptr, const struct movie_summary summary) {
     const int sock_fd = *(const int *) sock_ptr;
 
@@ -66,8 +90,17 @@ static bool send_summary(void *NONNULL sock_ptr, const struct movie_summary summ
     return false;
 }
 
+/**
+ * @brief Main function to handle all YAML-based requests on a single client socket.
+ *
+ * Uses parser_start() to read YAML operations, dispatches to appropriate db_* calls,
+ * and sends textual responses. Closes the socket at the end.
+ *
+ * @param sock_fd The socket file descriptor for this client.
+ * @param db      A non-null pointer to the database connection.
+ * @return true if a hard error was encountered (server might stop), false otherwise.
+ */
 bool handle_request(int sock_fd, db_conn *NONNULL db) {
-    // parse
     yaml_parser_t parser;
     bool ok = parser_start(&parser, sock_fd);
     if unlikely (!ok) {
@@ -84,11 +117,12 @@ bool handle_request(int sock_fd, db_conn *NONNULL db) {
     while (!stop && !hard_fail) {
         struct operation op = parser_next_op(&parser, &in_mapping);
         if (op.ty == INVALID_OP) {
+            // end or parse error => just stop
             stop = true;
             continue;
         }
 
-        message errmsg = NULL;
+        const char *errmsg = NULL;
         db_result result = DB_SUCCESS;
         switch (op.ty) {
             case ADD_MOVIE: {
@@ -172,6 +206,7 @@ bool handle_request(int sock_fd, db_conn *NONNULL db) {
                 fputs(response, stderr);
 
                 result = db_search_movies_by_genre(db, op.key.genre, send_movie, &sock_fd, &errmsg);
+                break;
             }
             case LIST_SUMMARIES: {
                 char response[128];
@@ -180,6 +215,7 @@ bool handle_request(int sock_fd, db_conn *NONNULL db) {
                 fputs(response, stderr);
 
                 result = db_list_summaries(db, send_summary, &sock_fd, &errmsg);
+                break;
             }
             case INVALID_OP:
             default: {

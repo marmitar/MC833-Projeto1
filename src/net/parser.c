@@ -1,4 +1,3 @@
-#include "../defines.h"
 #include <assert.h>
 #include <errno.h>
 #include <stdint.h>
@@ -8,8 +7,9 @@
 #include <sys/socket.h>
 #include <yaml.h>
 
-#include "./parser.h"
 #include "../database/database.h"
+#include "../defines.h"
+#include "./parser.h"
 
 #define PTR_FROM_INT(x) ((void *) (intptr_t) (x))
 #define INT_FROM_PTR(p) ((int) (intptr_t) (p))
@@ -121,7 +121,7 @@ static bool parse_i64(const char *NONNULL str, int64_t *NONNULL out) {
 /**
  * Mapping from key strings to an enum that identifies which field we're parsing.
  */
-enum current_key {
+enum [[gnu::packed]] current_key {
     NONE,
     ID_KEY,
     TITLE_KEY,
