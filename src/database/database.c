@@ -157,7 +157,7 @@ static void db_shutdown(void) {
 static bool db_create_schema(sqlite3 *NONNULL db, message *NULLABLE errmsg) {
     char *errorbuf = NULL;  // will be allocated via sqlite3_malloc, need to copied to std malloc
 
-    int rv = sqlite3_exec(db, SCHEMA, nullptr, nullptr, likely (errmsg != NULL) ? &errorbuf : NULL);
+    int rv = sqlite3_exec(db, SCHEMA, nullptr, nullptr, likely(errmsg != NULL) ? &errorbuf : NULL);
     if unlikely (rv != SQLITE_OK) {
         errmsg_dup_str(errmsg, errorbuf);
         sqlite3_free(errorbuf);  // safe to call with NULL

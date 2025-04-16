@@ -6,24 +6,24 @@
 
 #include "yaml/parser.h"
 
-#define PORT 12345
-#define BACKLOG 5
+#define PORT        12'345
+#define BACKLOG     5
 #define BUFFER_SIZE 4096
 
 int main(int argc, const char *NONNULL const argv[NONNULL]) {
-    if unlikely(argc != 2) {
+    if unlikely (argc != 2) {
         fprintf(stderr, "usage: %s <yamlfile>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     const int fd = open(argv[1], 0);
-    if unlikely(fd < 0) {
+    if unlikely (fd < 0) {
         perror("open");
     }
 
     yaml_parser_t parser;
     bool ok = parser_start(&parser, fd);
-    if unlikely(!ok) {
+    if unlikely (!ok) {
         fprintf(stderr, "failed to create YAML parser\n");
         close(fd);
         return EXIT_FAILURE;
@@ -34,8 +34,14 @@ int main(int argc, const char *NONNULL const argv[NONNULL]) {
         struct operation op = parser_next_op(&parser, &in_mapping);
         switch (op.ty) {
             case ADD_MOVIE:
-                printf("op ty%i: id=%" PRIi64 ", title=%s, director=%s, release_year=%d\n",
-                    op.ty, op.movie->title, op.movie->title, op.movie->director, op.movie->release_year);
+                printf(
+                    "op ty%i: id=%" PRIi64 ", title=%s, director=%s, release_year=%d\n",
+                    op.ty,
+                    op.movie->title,
+                    op.movie->title,
+                    op.movie->director,
+                    op.movie->release_year
+                );
 
                 for (size_t i = 0; op.movie->genres[i] != NULL; i++) {
                     printf("\tgenre[%zu]=%s\n", i, op.movie->genres[i]);
