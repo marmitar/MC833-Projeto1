@@ -2,7 +2,8 @@
 /** Handles database operations. */
 #define SRC_DATABASE_H
 
-#include "defines.h"
+#include "../defines.h"
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 

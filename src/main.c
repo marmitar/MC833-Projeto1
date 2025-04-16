@@ -1,118 +1,66 @@
-#include "database/database.h"
-
-#include "defines.h"
-#include <alloca.h>
+#include <fcntl.h>
 #include <inttypes.h>
-#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
-[[gnu::nonnull(1, 2), gnu::cold]]
-static void print_error(const char operation[NONNULL const], const char *NONNULL error) {
-#define BOLD_RED "\033[1;31m"
-#define RESET    "\033[0m"
-    (void) fprintf(stderr, BOLD_RED "Failed to %s:" RESET " %s\n", operation, error);
-    db_free_errmsg(error);
-#undef BOLD_RED
-#undef RESET
-}
+#include "yaml/parser.h"
 
-[[gnu::regcall]]
-static bool show_movie([[maybe_unused]] void *data, const struct movie *NONNULL movie) {
-    printf("movie[%i]: %s\n", movie->id, movie->title);
-    return false;
-}
+#define PORT 12345
+#define BACKLOG 5
+#define BUFFER_SIZE 4096
 
-[[gnu::regcall]]
-static bool show_summary([[maybe_unused]] void *data, const struct movie_summary summary) {
-    printf("summary[%i]: %s\n", summary.id, summary.title);
-    return false;
-}
-
-[[gnu::nonnull(1), gnu::hot]]
-static void run(db_conn *NONNULL conn) {
-    struct movie *movie = alloca(offsetof(struct movie, genres) + 3 * sizeof(const char *));
-    movie->id = 0;
-    movie->title = "Star Wars";
-    movie->director = "George Lucas";
-    movie->release_year = 1977;
-    movie->genres[0] = "Sci-Fi";
-    movie->genres[1] = "Thriller";
-    movie->genres[2] = NULL;
-
-    const char *error = NULL;
-    db_result res = db_register_movie(conn, movie, &error);
-    if unlikely (res != DB_SUCCESS) {
-        print_error("register movie", error);
-        return;
+int main(int argc, const char *NONNULL const argv[NONNULL]) {
+    if unlikely(argc != 2) {
+        fprintf(stderr, "usage: %s <yamlfile>\n", argv[0]);
+        return EXIT_FAILURE;
     }
 
-    printf("Movie id: %" PRIi64 "\n", movie->id);
-
-    res = db_add_genres(conn, movie->id, (const char *[2]) {"Sci-Fi", NULL}, &error);
-    if unlikely (res != DB_SUCCESS) {
-        print_error("add genres", error);
+    const int fd = open(argv[1], 0);
+    if unlikely(fd < 0) {
+        perror("open");
     }
 
-    res = db_add_genres(conn, movie->id, (const char *[2]) {"Fiction", NULL}, &error);
-    if unlikely (res != DB_SUCCESS) {
-        print_error("add genres", error);
+    yaml_parser_t parser;
+    bool ok = parser_start(&parser, fd);
+    if unlikely(!ok) {
+        fprintf(stderr, "failed to create YAML parser\n");
+        close(fd);
+        return EXIT_FAILURE;
     }
 
-    res = db_add_genres(conn, 0, (const char *[2]) {"Sci-Fi", NULL}, &error);
-    if unlikely (res != DB_SUCCESS) {
-        print_error("add genres", error);
-    }
+    bool in_mapping = false;
+    while (true) {
+        struct operation op = parser_next_op(&parser, &in_mapping);
+        switch (op.ty) {
+            case ADD_MOVIE:
+                printf("op ty%i: id=%" PRIi64 ", title=%s, director=%s, release_year=%d\n",
+                    op.ty, op.movie->title, op.movie->title, op.movie->director, op.movie->release_year);
 
-    struct movie *out = NULL;
-    res = db_get_movie(conn, movie->id, &out, &error);
-    if unlikely (res != DB_SUCCESS) {
-        print_error("get movie", error);
-    } else {
-        printf("MOVIE: id=%" PRIi64 ", title=%s\n", out->id, out->title);
-        for (const char **g = out->genres; *g != NULL; g++) {
-            printf("GENRE: %s\n", *g);
+                for (size_t i = 0; op.movie->genres[i] != NULL; i++) {
+                    printf("\tgenre[%zu]=%s\n", i, op.movie->genres[i]);
+                    free((char *) op.movie->genres[i]);
+                }
+                free((char *) op.movie->title);
+                free((char *) op.movie->director);
+                free(op.movie);
+                continue;
+            case ADD_GENRE:
+            case REMOVE_MOVIE:
+            case GET_MOVIE:
+            case SEARCH_BY_GENRE:
+                printf("op ty%i: id=%" PRIi64 ", genre=%s\n", op.ty, op.key.movie_id, op.key.genre);
+                free(op.key.genre);
+                continue;
+            case LIST_SUMMARIES:
+            case LIST_MOVIES:
+                printf("op ty%i\n", op.ty);
+                continue;
+            case INVALID_OP:
+            default:
+                yaml_parser_delete(&parser);
+                close(fd);
+                return EXIT_SUCCESS;
         }
-        free(out);
     }
-
-    res = db_list_movies(conn, show_movie, NULL, &error);
-    if unlikely (res != DB_SUCCESS) {
-        print_error("list movies", error);
-    }
-
-    res = db_search_movies_by_genre(conn, "Sci-Fi", show_movie, NULL, &error);
-    if unlikely (res != DB_SUCCESS) {
-        print_error("search movies", error);
-    }
-
-    res = db_list_summaries(conn, show_summary, NULL, &error);
-    if unlikely (res != DB_SUCCESS) {
-        print_error("list summaries", error);
-    }
-}
-
-extern int main(void) {
-    const char *error = NULL;
-    bool ok = db_setup("movies.db", &error);
-    if unlikely (!ok) {
-        print_error("setup database", error);
-        return EXIT_FAILURE;
-    }
-
-    db_conn *conn = db_connect("movies.db", &error);
-    if unlikely (conn == NULL) {
-        print_error("connect to database", error);
-        return EXIT_FAILURE;
-    }
-
-    run(conn);
-
-    ok = db_disconnect(conn, &error);
-    if unlikely (!ok) {
-        print_error("disconnect to database", error);
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
 }

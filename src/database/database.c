@@ -1,7 +1,7 @@
 /** Database operations. */
 #include "./sqlite_source.h"  // must be included first for defines
 
-#include "defines.h"
+#include "../defines.h"
 #include <assert.h>
 #include <inttypes.h>
 #include <limits.h>

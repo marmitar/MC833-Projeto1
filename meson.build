@@ -133,8 +133,8 @@ linker_options = cc.get_supported_link_arguments(
     '-Wl,-z,pack-relative-relocs'
 )
 
-# # # # # # # # #
-# DEPENDENCIES  #
+# # # # # #
+# SQLITE  #
 
 sqlite3 = subproject('sqlite3',
         default_options: {
@@ -254,13 +254,23 @@ foreach option, value : sqlite3_overrides
 endforeach
 
 # # # # # #
-# TARGETS #
+# LIBYAML #
 
-executable('main', files('src/main.c', 'src/database/database.c'),
+libyaml = subproject('libyaml',
+        required: true,
+        version: ['>=0.2.5', '<0.3.0'],
+    ) \
+    .get_variable('yaml_dep') \
+    .as_system('system')
+
+# # # # # # # # #
+# FINAL BINARY  #
+
+executable('main', files('src/main.c', 'src/database/database.c', 'src/yaml/parser.c'),
     include_directories: include_directories('src/'),
     c_args: warnings + optimizations + general_codegen + debugging + sqlite3_flags,
     link_args: linker_options,
     gnu_symbol_visibility: 'hidden',
     export_dynamic: false,
-    dependencies: sqlite3,
+    dependencies: [sqlite3, libyaml],
 )
