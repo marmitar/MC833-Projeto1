@@ -1,80 +1,95 @@
+#include <liburing.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include "./database/database.h"
 #include "./defines.h"
-#include "./net/handler.h"
+#include "./worker/worker.h"
 
 static constexpr const uint16_t PORT = 12'345;
 static constexpr const int BACKLOG = 5;
 
 extern int main(void) {
-    // Suppose the DB is local
-    const char *NONNULL errmsg[1] = {NULL};
-    bool setup_ok = db_setup("movies.db", errmsg);
-    if (!setup_ok) {
-        fprintf(stderr, "db_setup: %s\n", errmsg[0]);
-        db_free_errmsg(errmsg[0]);
-        return 1;
+    // initialize sqlite
+    const char *errmsg = NULL;
+    bool setup_ok = db_setup(DATABASE, &errmsg);
+    if unlikely (!setup_ok) {
+        fprintf(stderr, "db_setup: %s\n", errmsg);
+        db_free_errmsg(errmsg);
+        return EXIT_FAILURE;
     }
 
-    db_conn *db = db_connect("movies.db", errmsg);
-    if (!db) {
-        fprintf(stderr, "db_connect: %s\n", errmsg[0]);
-        db_free_errmsg(errmsg[0]);
-        return 1;
+    // initialize io_uring
+    struct io_uring ring;
+    bool ok = uring_init(&ring);
+    if unlikely (!ok) {
+        return EXIT_FAILURE;
     }
 
+    // initialize socket
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) {
+    if unlikely (server_fd < 0) {
         perror("socket");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     int yes = 1;
+    struct timeval tv = {.tv_sec = 300, .tv_usec = 0};
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));  // NOLINT(misc-include-cleaner)
-
+    setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));     // NOLINT(misc-include-cleaner)
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
         .sin_port = htons(PORT),
         .sin_addr.s_addr = INADDR_ANY,
     };
 
-    if (bind(server_fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+    if unlikely (bind(server_fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
         perror("bind");
         close(server_fd);
-        return 1;
+        return EXIT_FAILURE;
     }
-
-    if (listen(server_fd, BACKLOG) < 0) {
+    if unlikely (listen(server_fd, BACKLOG) < 0) {
         perror("listen");
         close(server_fd);
-        return 1;
+        return EXIT_FAILURE;
     }
 
-    printf("Server listening on port %d\n", PORT);
+    printf("server listening on port %d\n", PORT);
+    if (post_accept(&ring, server_fd) == 0) {
+        io_uring_submit(&ring);
+    }
 
-    bool abort = false;
-    while (!abort) {
-        struct sockaddr_in client_addr;
-        socklen_t addrlen = sizeof(client_addr);
-        int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &addrlen);
-        if (client_fd < 0) {
-            perror("accept");
-            continue;
+    const unsigned n = cpu_count();
+    pthread_t *workers = malloc(n * sizeof(pthread_t));
+    if unlikely (workers == NULL) {
+        perror("malloc");
+        close(server_fd);
+        return EXIT_FAILURE;
+        ;
+    }
+
+    for (unsigned i = 0; i < n; i++) {
+        bool ok = start_worker(&(workers[i]), &ring);
+        if unlikely (!ok) {
+            workers[i] = 0;
         }
-
-        // Single-thread approach: handle one client at a time
-        abort = handle_request(client_fd, db);
-        close(client_fd);
     }
 
-    db_disconnect(db, NULL);
+    // start accepting
+    while (true) {
+        if (post_accept(&ring, server_fd) == 0) {
+            io_uring_submit(&ring);
+        }
+        sleep(100);
+    }
+
     close(server_fd);
-    return abort ? EXIT_FAILURE : EXIT_SUCCESS;
+    return EXIT_SUCCESS;
 }

@@ -41,4 +41,9 @@
 /** Happy result, no errors. */
 #define OK 0
 
+/** Passes integer as pointer argument for callbacks. */
+#define PTR_FROM_INT(x) ((void *) (intptr_t) (x))  // NOLINT(performance-no-int-to-ptr)
+/** Recover integer from callback pointer. */
+#define INT_FROM_PTR(p) ((int) (intptr_t) (p))
+
 #endif  // SRC_DEFINES_H

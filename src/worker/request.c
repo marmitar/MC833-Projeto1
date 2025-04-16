@@ -8,8 +8,8 @@
 
 #include "../database/database.h"
 #include "../defines.h"
-#include "./handler.h"
 #include "./parser.h"
+#include "./request.h"
 
 [[gnu::regcall]]
 /**
@@ -45,7 +45,7 @@ static bool handle_result(int sock_fd, message errmsg, db_result result) {
  * unless you want to stop after the first record.
  */
 static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE movie) {
-    const int sock_fd = *(const int *) sock_ptr;
+    const int sock_fd = INT_FROM_PTR(sock_ptr);
 
     if unlikely (movie == NULL) {
         char msg[] = "server: null\n";
@@ -136,7 +136,7 @@ bool handle_request(int sock_fd, db_conn *NONNULL db) {
                     op.movie->director
                 );
                 send(sock_fd, response, strlen(response), 0);
-                fputs(response, stderr);
+                fprintf(stderr, "thread[%lu]: %s", response);
 
                 result = db_register_movie(db, op.movie, &errmsg);
                 for (size_t i = 0; op.movie->genres[i] != NULL; i++) {
@@ -157,7 +157,7 @@ bool handle_request(int sock_fd, db_conn *NONNULL db) {
                     op.key.movie_id
                 );
                 send(sock_fd, response, strlen(response), 0);
-                fputs(response, stderr);
+                fprintf(stderr, "thread[%lu]: %s", response);
 
                 result = db_add_genres(db, op.key.movie_id, (const char *[2]) {op.key.genre, NULL}, &errmsg);
                 free(op.key.genre);
@@ -172,7 +172,7 @@ bool handle_request(int sock_fd, db_conn *NONNULL db) {
                     op.key.movie_id
                 );
                 send(sock_fd, response, strlen(response), 0);
-                fputs(response, stderr);
+                fprintf(stderr, "thread[%lu]: %s", response);
 
                 result = db_delete_movie(db, op.key.movie_id, &errmsg);
                 free(op.key.genre);
@@ -182,46 +182,46 @@ bool handle_request(int sock_fd, db_conn *NONNULL db) {
                 char response[128];
                 snprintf(response, sizeof(response), "server: received GET_MOVIE: id[%" PRIi64 "]\n", op.key.movie_id);
                 send(sock_fd, response, strlen(response), 0);
-                fputs(response, stderr);
+                fprintf(stderr, "thread[%lu]: %s", response);
 
                 struct movie *movie = NULL;
                 result = db_get_movie(db, op.key.movie_id, &movie, &errmsg);
 
-                send_movie(&sock_fd, movie);
+                send_movie(PTR_FROM_INT(sock_fd), movie);
                 free(movie);
                 break;
             }
             case LIST_MOVIES: {
                 char response[] = "server: received LIST_MOVIES\n";
                 send(sock_fd, response, strlen(response), 0);
-                fputs(response, stderr);
+                fprintf(stderr, "thread[%lu]: %s", response);
 
-                result = db_list_movies(db, send_movie, &sock_fd, &errmsg);
+                result = db_list_movies(db, send_movie, PTR_FROM_INT(sock_fd), &errmsg);
                 break;
             }
             case SEARCH_BY_GENRE: {
                 char response[128];
                 snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
                 send(sock_fd, response, strlen(response), 0);
-                fputs(response, stderr);
+                fprintf(stderr, "thread[%lu]: %s", response);
 
-                result = db_search_movies_by_genre(db, op.key.genre, send_movie, &sock_fd, &errmsg);
+                result = db_search_movies_by_genre(db, op.key.genre, send_movie, PTR_FROM_INT(sock_fd), &errmsg);
                 break;
             }
             case LIST_SUMMARIES: {
                 char response[128];
                 snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
                 send(sock_fd, response, strlen(response), 0);
-                fputs(response, stderr);
+                fprintf(stderr, "thread[%lu]: %s", response);
 
-                result = db_list_summaries(db, send_summary, &sock_fd, &errmsg);
+                result = db_list_summaries(db, send_summary, PTR_FROM_INT(sock_fd), &errmsg);
                 break;
             }
             case INVALID_OP:
             default: {
                 const char response[] = "server: received an unknown operation, stopping communication\n";
                 send(sock_fd, response, strlen(response), 0);
-                fputs(response, stderr);
+                fprintf(stderr, "thread[%lu]: %s", response);
                 stop = true;
                 break;
             }

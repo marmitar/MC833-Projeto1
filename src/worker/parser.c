@@ -11,9 +11,6 @@
 #include "../defines.h"
 #include "./parser.h"
 
-#define PTR_FROM_INT(x) ((void *) (intptr_t) (x))
-#define INT_FROM_PTR(p) ((int) (intptr_t) (p))
-
 [[gnu::nonnull(1)]]
 /**
  * A read handler for libyaml that reads from a file descriptor.
@@ -37,7 +34,7 @@ bool parser_start(yaml_parser_t *NONNULL parser, const int sock_fd) {
         return false;
     }
 
-    void *data = PTR_FROM_INT(sock_fd);  // NOLINT(performance-no-int-to-ptr)
+    void *data = PTR_FROM_INT(sock_fd);
     yaml_parser_set_encoding(parser, YAML_UTF8_ENCODING);
     yaml_parser_set_input(parser, sock_read_handler, data);
     return true;
@@ -246,11 +243,11 @@ static char *NULLABLE *NULLABLE parse_genre_list(yaml_parser_t *NONNULL parser) 
                 in_list = true;
                 continue;
 
+            case YAML_NO_EVENT:
             case YAML_SEQUENCE_END_EVENT:
                 yaml_event_delete(&event);
                 return genres;
 
-            case YAML_NO_EVENT:
             case YAML_ALIAS_EVENT:
                 yaml_event_delete(&event);
                 continue;
@@ -328,7 +325,6 @@ static struct operation parse_movie(yaml_parser_t *NONNULL parser, enum operatio
                         break;
 
                     case YEAR_KEY:
-                        // parse year if not already set
                         if (needs_year) {
                             needs_year = !parse_i64((const char *) event.data.scalar.value, &release_year);
                         }
@@ -361,7 +357,6 @@ static struct operation parse_movie(yaml_parser_t *NONNULL parser, enum operatio
                 key = NONE;
                 continue;
 
-            case YAML_NO_EVENT:
             case YAML_ALIAS_EVENT:
                 yaml_event_delete(&event);
                 continue;
@@ -374,12 +369,11 @@ static struct operation parse_movie(yaml_parser_t *NONNULL parser, enum operatio
                 in_mapping = true;
                 continue;
 
+            case YAML_NO_EVENT:
             case YAML_MAPPING_END_EVENT:
                 yaml_event_delete(&event);
-                // all fields must be present
-                if unlikely (title == NULL || director == NULL || needs_year || genres == NULL) {
-                    return parse_fail(title, director, genres);
-                } else {
+                // try to close the current operation
+                if likely (title != NULL && director != NULL && needs_year && genres != NULL) {
                     size_t len = list_len((const char *const *) genres);
                     struct movie *movie = malloc(sizeof(struct movie) + (len + 1) * sizeof(char *));
                     if unlikely (movie == NULL) {
@@ -397,6 +391,11 @@ static struct operation parse_movie(yaml_parser_t *NONNULL parser, enum operatio
                     free((void *) genres);
 
                     return (struct operation) {.ty = ty, .movie = movie};
+                } else if (event.type == YAML_MAPPING_END_EVENT) {
+                    // mapping finshed, operation should have been finished
+                    return parse_fail(title, director, genres);
+                } else {
+                    continue;
                 }
 
             // If we hit any other event, it's not valid for a single-level movie mapping
@@ -503,7 +502,6 @@ static struct operation
                 key = NONE;
                 continue;
 
-            case YAML_NO_EVENT:
             case YAML_ALIAS_EVENT:
                 yaml_event_delete(&event);
                 continue;
@@ -515,6 +513,17 @@ static struct operation
                 }
                 in_mapping = true;
                 continue;
+
+            case YAML_NO_EVENT:
+                yaml_event_delete(&event);
+                // If we needed ID or genre and didn't parse it, fail
+                if (in_mapping || needs_id || needs_genre) {
+                    continue;
+                }
+                return (struct operation) {
+                    .ty = ty,
+                    .key = {.movie_id = id, .genre = genre}
+                };
 
             case YAML_MAPPING_END_EVENT:
                 yaml_event_delete(&event);
@@ -610,7 +619,6 @@ struct operation parser_next_op(yaml_parser_t *NONNULL parser, bool *NONNULL was
                 *was_in_mapping = in_mapping;
                 continue;
 
-            case YAML_NO_EVENT:
             case YAML_STREAM_START_EVENT:
             case YAML_DOCUMENT_START_EVENT:
             case YAML_ALIAS_EVENT:
@@ -620,6 +628,7 @@ struct operation parser_next_op(yaml_parser_t *NONNULL parser, bool *NONNULL was
                 yaml_event_delete(&event);
                 continue;
 
+            case YAML_NO_EVENT:
             case YAML_STREAM_END_EVENT:
             case YAML_DOCUMENT_END_EVENT:
             default:

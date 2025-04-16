@@ -1,6 +1,6 @@
-#ifndef SRC_PARSER_H
+#ifndef SRC_NET_PARSER_H
 /** Database operation parser. */
-#define SRC_PARSER_H
+#define SRC_NET_PARSER_H
 
 #include <stdint.h>
 #include <yaml.h>
@@ -66,4 +66,4 @@ bool parser_start(yaml_parser_t *NONNULL parser, int sock_fd);
  */
 struct operation parser_next_op(yaml_parser_t *NONNULL parser, bool *NONNULL in_mapping);
 
-#endif  // SRC_PARSER_H
+#endif  // SRC_NET_PARSER_H

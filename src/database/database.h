@@ -8,6 +8,9 @@
 
 #include "../defines.h"
 
+/** The default database name. */
+static constexpr const char DATABASE[] = "movies.db";
+
 /** Opaque handle to a database connection. */
 typedef struct database_connection db_conn;
 
