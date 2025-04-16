@@ -11,7 +11,7 @@
 /**
  * Enum for high-level operations that can be parsed from YAML.
  */
- enum operation_ty {
+enum operation_ty {
     INVALID_OP = 0,
     ADD_MOVIE = 1,
     ADD_GENRE = 2,
@@ -25,7 +25,7 @@
 /**
  * A parsed operation that either points to a `struct movie` or a movie/genre key.
  */
- struct operation {
+struct operation {
     enum operation_ty ty;
     union {
         /**
@@ -51,7 +51,7 @@
  *
  * @return true on success, false otherwise.
  */
-bool parser_start(yaml_parser_t *NONNULL parser, int fd);
+bool parser_start(yaml_parser_t *NONNULL parser, int sock_fd);
 
 [[gnu::regcall, gnu::nonnull(1, 2), gnu::leaf, gnu::nothrow]]
 /**

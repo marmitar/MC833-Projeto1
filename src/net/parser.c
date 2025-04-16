@@ -5,11 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+#include <sys/socket.h>
 #include <yaml.h>
 
-#include "../database/database.h"
 #include "./parser.h"
+#include "../database/database.h"
 
 #define PTR_FROM_INT(x) ((void *) (intptr_t) (x))
 #define INT_FROM_PTR(p) ((int) (intptr_t) (p))
@@ -18,9 +18,9 @@
 /**
  * A read handler for libyaml that reads from a file descriptor.
  */
-static int fd_read_handler(void *data, unsigned char *NONNULL buffer, size_t size, size_t *NONNULL size_read) {
-    const int fd = INT_FROM_PTR(data);
-    ssize_t rv = read(fd, buffer, size);
+static int sock_read_handler(void *data, unsigned char *NONNULL buffer, size_t size, size_t *NONNULL size_read) {
+    const int sock_fd = INT_FROM_PTR(data);
+    ssize_t rv = recv(sock_fd, buffer, size, 0);
     if unlikely (rv < 0) {
         *size_read = 0;
         return 0;
@@ -31,15 +31,15 @@ static int fd_read_handler(void *data, unsigned char *NONNULL buffer, size_t siz
 }
 
 /** Initializes YAML parser.  */
-bool parser_start(yaml_parser_t *NONNULL parser, const int fd) {
+bool parser_start(yaml_parser_t *NONNULL parser, const int sock_fd) {
     int rv = yaml_parser_initialize(parser);
     if unlikely (rv == 0) {
         return false;
     }
 
-    void *data = PTR_FROM_INT(fd);  // NOLINT(performance-no-int-to-ptr)
+    void *data = PTR_FROM_INT(sock_fd);  // NOLINT(performance-no-int-to-ptr)
     yaml_parser_set_encoding(parser, YAML_UTF8_ENCODING);
-    yaml_parser_set_input(parser, fd_read_handler, data);
+    yaml_parser_set_input(parser, sock_read_handler, data);
     return true;
 }
 

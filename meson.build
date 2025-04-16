@@ -266,7 +266,7 @@ libyaml = subproject('libyaml',
 # # # # # # # # #
 # FINAL BINARY  #
 
-executable('main', files('src/main.c', 'src/database/database.c', 'src/yaml/parser.c'),
+executable('main', files('src/main.c', 'src/database/database.c', 'src/yaml/parser.c', 'src/net/handler.c'),
     include_directories: include_directories('src/'),
     c_args: warnings + optimizations + general_codegen + debugging + sqlite3_flags,
     link_args: linker_options,

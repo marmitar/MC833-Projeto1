@@ -1,72 +1,80 @@
-#include <fcntl.h>
-#include <inttypes.h>
+#include "./defines.h"
+#include <netinet/in.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
-#include "yaml/parser.h"
+#include "./database/database.h"
+#include "./net/handler.h"
 
-#define PORT        12'345
-#define BACKLOG     5
-#define BUFFER_SIZE 4096
+static constexpr const uint16_t PORT = 12'345;
+static constexpr const int BACKLOG = 5;
 
-int main(int argc, const char *NONNULL const argv[NONNULL]) {
-    if unlikely (argc != 2) {
-        fprintf(stderr, "usage: %s <yamlfile>\n", argv[0]);
-        return EXIT_FAILURE;
+extern int main(void) {
+    // Suppose the DB is local
+    const char *NONNULL errmsg[1] = {NULL};
+    bool setup_ok = db_setup("movies.db", errmsg);
+    if (!setup_ok) {
+        fprintf(stderr, "db_setup: %s\n", errmsg[0]);
+        db_free_errmsg(errmsg[0]);
+        return 1;
     }
 
-    const int fd = open(argv[1], 0);
-    if unlikely (fd < 0) {
-        perror("open");
+    db_conn *db = db_connect("movies.db", errmsg);
+    if (!db) {
+        fprintf(stderr, "db_connect: %s\n", errmsg[0]);
+        db_free_errmsg(errmsg[0]);
+        return 1;
     }
 
-    yaml_parser_t parser;
-    bool ok = parser_start(&parser, fd);
-    if unlikely (!ok) {
-        fprintf(stderr, "failed to create YAML parser\n");
-        close(fd);
-        return EXIT_FAILURE;
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd < 0) {
+        perror("socket");
+        return 1;
     }
 
-    bool in_mapping = false;
-    while (true) {
-        struct operation op = parser_next_op(&parser, &in_mapping);
-        switch (op.ty) {
-            case ADD_MOVIE:
-                printf(
-                    "op ty%i: id=%" PRIi64 ", title=%s, director=%s, release_year=%d\n",
-                    op.ty,
-                    op.movie->title,
-                    op.movie->title,
-                    op.movie->director,
-                    op.movie->release_year
-                );
+    int yes = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));  // NOLINT(misc-include-cleaner)
 
-                for (size_t i = 0; op.movie->genres[i] != NULL; i++) {
-                    printf("\tgenre[%zu]=%s\n", i, op.movie->genres[i]);
-                    free((char *) op.movie->genres[i]);
-                }
-                free((char *) op.movie->title);
-                free((char *) op.movie->director);
-                free(op.movie);
-                continue;
-            case ADD_GENRE:
-            case REMOVE_MOVIE:
-            case GET_MOVIE:
-            case SEARCH_BY_GENRE:
-                printf("op ty%i: id=%" PRIi64 ", genre=%s\n", op.ty, op.key.movie_id, op.key.genre);
-                free(op.key.genre);
-                continue;
-            case LIST_SUMMARIES:
-            case LIST_MOVIES:
-                printf("op ty%i\n", op.ty);
-                continue;
-            case INVALID_OP:
-            default:
-                yaml_parser_delete(&parser);
-                close(fd);
-                return EXIT_SUCCESS;
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(PORT),
+        .sin_addr.s_addr = INADDR_ANY,
+    };
+
+    if (bind(server_fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+        perror("bind");
+        close(server_fd);
+        return 1;
+    }
+
+    if (listen(server_fd, BACKLOG) < 0) {
+        perror("listen");
+        close(server_fd);
+        return 1;
+    }
+
+    printf("Server listening on port %d\n", PORT);
+
+    bool abort = false;
+    while (!abort) {
+        struct sockaddr_in client_addr;
+        socklen_t addrlen = sizeof(client_addr);
+        int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &addrlen);
+        if (client_fd < 0) {
+            perror("accept");
+            continue;
         }
+
+        // Single-thread approach: handle one client at a time
+        abort = handle_request(client_fd, db);
+        close(client_fd);
     }
+
+    db_disconnect(db, NULL);
+    close(server_fd);
+    return abort ? EXIT_FAILURE : EXIT_SUCCESS;
 }
