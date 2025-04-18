@@ -38,9 +38,6 @@
 // https://gcc.gnu.org/onlinedocs/gcc-4.8.5/cpp/Stringification.html
 #define STR_(...) #__VA_ARGS__
 
-/** Happy result, no errors. */
-#define OK 0
-
 /** Passes integer as pointer argument for callbacks. */
 #define PTR_FROM_INT(x) ((void *) (intptr_t) (x))  // NOLINT(performance-no-int-to-ptr)
 /** Recover integer from callback pointer. */

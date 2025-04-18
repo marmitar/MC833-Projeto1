@@ -20,14 +20,14 @@ static const char UNKNOWN_ERROR[] = "unknown error";
 static const char OUT_OF_MEMORY_ERROR[] = "out of memory";
 static const char ATEXIT_NOT_REGISTERED_ERROR[] = "could not call at_exit";
 
-[[gnu::cold, gnu::const, nodiscard]]
+[[gnu::cold, gnu::const, nodiscard("useless call when discarded")]]
 /** Predefined error messages, which are NOT dynamically allocated and should not be free. */
 static inline bool is_predefined_errmsg(const char *NULLABLE const error_message) {
     return error_message == UNKNOWN_ERROR || error_message == OUT_OF_MEMORY_ERROR
         || error_message == ATEXIT_NOT_REGISTERED_ERROR;
 }
 
-[[gnu::cold, gnu::returns_nonnull, nodiscard]]
+[[gnu::cold, gnu::returns_nonnull, nodiscard("might allocate memory")]]
 /**
  * Duplicates an error message string if not NULL, returning a default message when the original is NULL or
  * allocation fails.
@@ -176,7 +176,7 @@ bool db_setup(const char filepath[NONNULL restrict], message *NULLABLE restrict 
     }
 
     rv = atexit(db_shutdown);
-    if unlikely (rv != OK) {
+    if unlikely (rv != 0) {
         // ATEXIT_NOT_REGISTERED_ERROR is statically predefined because `atexit` only fails on out-of-memory
         // situations, so it doesn't make sense to try another allocation here
         errmsg_dup_str(errmsg, ATEXIT_NOT_REGISTERED_ERROR);

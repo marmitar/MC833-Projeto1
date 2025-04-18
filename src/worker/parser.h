@@ -1,8 +1,10 @@
-#ifndef SRC_NET_PARSER_H
+#ifndef SRC_WORKER_PARSER_H
 /** Database operation parser. */
-#define SRC_NET_PARSER_H
+#define SRC_WORKER_PARSER_H
 
+#include <stdbool.h>
 #include <stdint.h>
+
 #include <yaml.h>
 
 #include "../database/database.h"
@@ -44,7 +46,7 @@ struct operation {
     };
 };
 
-[[gnu::regcall, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[nodiscard("uninitialized parser if false"), gnu::regcall, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**
  * Initializes a YAML parser to read from the file descriptor `fd`.
  *
@@ -52,7 +54,7 @@ struct operation {
  */
 bool parser_start(yaml_parser_t *NONNULL parser, int sock_fd);
 
-[[gnu::regcall, gnu::nonnull(1, 2), gnu::leaf, gnu::nothrow]]
+[[nodiscard("allocated memory must be freed"), gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Reads the next operation from the YAML parser, which may be outside or inside a mapping.
  *
@@ -66,4 +68,4 @@ bool parser_start(yaml_parser_t *NONNULL parser, int sock_fd);
  */
 struct operation parser_next_op(yaml_parser_t *NONNULL parser, bool *NONNULL in_mapping);
 
-#endif  // SRC_NET_PARSER_H
+#endif  // SRC_WORKER_PARSER_H

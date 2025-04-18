@@ -2,16 +2,24 @@
 /** Database operation parser. */
 #define SRC_PARSER_H
 
-#include <liburing.h>
+#include <stdbool.h>
+
 #include <pthread.h>
-#include <stdint.h>
+
+#include <liburing.h>
+
 
 #include "../defines.h"
 
 unsigned cpu_count(void);
 
+struct context {
+    pthread_mutex_t mutex;
+    struct io_uring ring;
+};
+
 [[gnu::regcall, gnu::nonnull(1, 2), gnu::nothrow]]
-bool start_worker(pthread_t *NONNULL id, struct io_uring *NONNULL uring);
+bool start_worker(pthread_t *NONNULL id, struct context *NONNULL ctx);
 
 [[gnu::regcall, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 bool uring_init(struct io_uring *NONNULL ring);

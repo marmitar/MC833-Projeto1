@@ -1,10 +1,12 @@
-#include <liburing.h>
 #include <limits.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <pthread.h>
 #include <unistd.h>
+
+#include <liburing.h>
 
 #include "../database/database.h"
 #include "../defines.h"
@@ -25,7 +27,7 @@ static constexpr const size_t IORING_QUEUE_DEPTH = 64;
  */
 static void *NULLABLE worker_thread(void *NONNULL arg) {
     const pthread_t id = pthread_self();
-    struct io_uring *ring = (struct io_uring *) arg;
+    struct context *ctx = (struct context *) arg;
 
     const char *errmsg = NULL;
     db_conn *db = db_connect(DATABASE, &errmsg);
@@ -37,27 +39,33 @@ static void *NULLABLE worker_thread(void *NONNULL arg) {
 
     bool stop = false;
     while (!stop) {
+        int rv = pthread_mutex_lock(&(ctx->mutex));
+        if unlikely(rv != 0) {
+            stop = true;
+            continue;
+        }
+
         struct io_uring_cqe *cqe = NULL;
-        int rv = io_uring_wait_cqe(ring, &cqe);
+        rv = io_uring_wait_cqe(&(ctx->ring), &cqe);
         if unlikely (rv < 0) {
+            pthread_mutex_unlock(&(ctx->mutex));
             fprintf(stderr, "thread[%lu]: io_uring_wait_cqe: %s\n", id, strerror(-rv));
             continue;
         }
 
-        int res = cqe->res;
-        void *udata = io_uring_cqe_get_data(cqe);
-        if (res < 0) {
-            fprintf(stderr, "thread[%lu]: io_uring op failed: %s\n", id, strerror(-res));
-            io_uring_cqe_seen(ring, cqe);
+        const int sock_fd = cqe->res;
+        if unlikely (sock_fd < 0) {
+            fprintf(stderr, "thread[%lu]: io_uring op failed: %s\n", id, strerror(-sock_fd));
+            io_uring_cqe_seen(&(ctx->ring), cqe);
+            pthread_mutex_unlock(&(ctx->mutex));
             continue;
         }
-
-        const int client_fd = INT_FROM_PTR(udata);
-        io_uring_cqe_seen(ring, cqe);
+        io_uring_cqe_seen(&(ctx->ring), cqe);
+        pthread_mutex_unlock(&(ctx->mutex));
 
         // This blocks the worker while we parse & respond, which might not be truly async.
         // For a fully async approach, you'd queue further read/write requests.
-        stop = handle_request(client_fd, db);
+        stop = handle_request(sock_fd, db);
     }
 
     fprintf(stderr, "thread[%lu]: full stop required\n", id);
@@ -74,7 +82,7 @@ static void *NULLABLE worker_thread(void *NONNULL arg) {
  * Get the number of available CPUs.
  */
 unsigned cpu_count(void) {
-    long cpus = sysconf(_SC_NPROCESSORS_ONLN);
+    long long cpus = sysconf(_SC_NPROCESSORS_ONLN);
     if unlikely (cpus < 0) {
         return 0;
     } else if unlikely (cpus > UINT_MAX) {
@@ -87,8 +95,8 @@ unsigned cpu_count(void) {
 /**
  * Start a worker thread.
  */
-bool start_worker(pthread_t *NONNULL id, struct io_uring *NONNULL uring) {
-    return pthread_create(id, NULL, worker_thread, uring) == 0;
+bool start_worker(pthread_t *NONNULL id, struct context *NONNULL ctx) {
+    return pthread_create(id, NULL, worker_thread, ctx) == 0;
 }
 
 /**

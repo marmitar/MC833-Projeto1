@@ -2,8 +2,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <pthread.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
 #include <yaml.h>
 
 #include "../database/database.h"
@@ -11,7 +16,7 @@
 #include "./parser.h"
 #include "./request.h"
 
-[[gnu::regcall]]
+[[nodiscard("hard errors cannot be ignored"), gnu::regcall]]
 /**
  * Sends a debug response to the client based on `db_result` and `errmsg`.
  *
@@ -37,7 +42,7 @@ static bool handle_result(int sock_fd, message errmsg, db_result result) {
     return unlikely(result == DB_HARD_ERROR);
 }
 
-[[gnu::regcall]]
+[[gnu::regcall, gnu::hot]]
 /**
  * Sends textual movie data back to the client.
  *
@@ -75,18 +80,42 @@ static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE movi
     return false;
 }
 
-[[gnu::regcall]]
+[[gnu::regcall, gnu::hot]]
 /**
  * Sends a single-line summary (id + title) of a movie to the client.
  *
  * @return false to keep listing.
  */
 static bool send_summary(void *NONNULL sock_ptr, const struct movie_summary summary) {
-    const int sock_fd = *(const int *) sock_ptr;
+    const int sock_fd = INT_FROM_PTR(sock_ptr);
 
     char msg[1024];
     snprintf(msg, 1024, "movie[id=%" PRIi64 "]: %s\n", summary.id, summary.title);
     send(sock_fd, msg, strlen(msg), 0);
+    return false;
+}
+
+[[gnu::regcall, gnu::nonnull(3)]]
+/** Writes the client IP in human readable format. */
+static bool get_peer_ip(int sock_fd, socklen_t len, char ip[NONNULL len]) {
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = 0,
+        .sin_addr.s_addr = INADDR_ANY,
+    };
+    socklen_t sock_len = sizeof(addr);
+
+    int rv = getpeername(sock_fd, &addr, &sock_len);
+    if likely(rv == 0) {
+        const char *p = inet_ntop(AF_INET, &addr, ip, len);
+        if likely(p != NULL) {
+            ip[len - 1] = '\0';
+            return true;
+        }
+    }
+
+    const char unknown[] = "<unknown>";
+    memcpy(ip, unknown, sizeof(unknown));
     return false;
 }
 
@@ -101,6 +130,10 @@ static bool send_summary(void *NONNULL sock_ptr, const struct movie_summary summ
  * @return true if a hard error was encountered (server might stop), false otherwise.
  */
 bool handle_request(int sock_fd, db_conn *NONNULL db) {
+    char ip[32] = "";
+    get_peer_ip(sock_fd, 32, ip);
+    fprintf(stderr, "thread[%lu]: handling socket %d, peer ip %s\n", pthread_self(), sock_fd, ip);
+
     yaml_parser_t parser;
     bool ok = parser_start(&parser, sock_fd);
     if unlikely (!ok) {

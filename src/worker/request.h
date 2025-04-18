@@ -1,6 +1,8 @@
-#ifndef SRC_WORKER_HANDLER_H
+#ifndef SRC_WORKER_REQUEST_HANDLER_H
 /** Network request hander. */
-#define SRC_WORKER_HANDLER_H
+#define SRC_WORKER_REQUEST_HANDLER_H
+
+#include <stdbool.h>
 
 #include "../database/database.h"
 #include "../defines.h"
@@ -19,4 +21,4 @@
  */
 bool handle_request(int sock_fd, db_conn *NONNULL db);
 
-#endif  // SRC_WORKER_HANDLER_H
+#endif  // SRC_WORKER_REQUEST_HANDLER_H

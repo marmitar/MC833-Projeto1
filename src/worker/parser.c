@@ -4,14 +4,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include <sys/socket.h>
+
 #include <yaml.h>
 
 #include "../database/database.h"
 #include "../defines.h"
 #include "./parser.h"
 
-[[gnu::nonnull(1)]]
+[[gnu::nonnull(1), gnu::hot]]
 /**
  * A read handler for libyaml that reads from a file descriptor.
  */
@@ -40,7 +42,7 @@ bool parser_start(yaml_parser_t *NONNULL parser, const int sock_fd) {
     return true;
 }
 
-[[gnu::regcall, gnu::pure, gnu::nonnull(1, 2)]]
+[[nodiscard("useless call if discarded"), gnu::regcall, gnu::pure, gnu::nonnull(1, 2)]]
 /**
  * Checks if `key` matches `expected`, ignoring type qualifiers.
  */
@@ -48,7 +50,7 @@ static inline bool streq(const yaml_char_t *NONNULL restrict key, const char *ex
     return strcmp((const char *) key, expected) == 0;
 }
 
-[[gnu::regcall, gnu::const, gnu::nonnull(1)]]
+[[nodiscard("useless call if discarded"), gnu::regcall, gnu::const, gnu::nonnull(1)]]
 /**
  * Parses the operation type from a given YAML scalar key.
  *
@@ -77,7 +79,7 @@ enum operation_ty parse_ty(const yaml_char_t *NONNULL key) {
 /**
  * Computes the length of a NULL-terminated array of strings.
  */
-[[gnu::regcall, gnu::pure, gnu::nonnull(1)]]
+[[nodiscard("useless call if discarded"), gnu::regcall, gnu::pure, gnu::nonnull(1)]]
 static size_t list_len(const char *NULLABLE const list[NONNULL]) {
     if unlikely (list == NULL) {
         return 0;
@@ -97,7 +99,7 @@ static size_t list_len(const char *NULLABLE const list[NONNULL]) {
  * @param out  Output parameter for the parsed int64_t.
  * @return true on success, false on invalid format or out of range.
  */
-[[gnu::regcall]]
+[[nodiscard("uninitialized output if false"), gnu::regcall]]
 static bool parse_i64(const char *NONNULL str, int64_t *NONNULL out) {
     if unlikely (str == NULL || str[0] == '\0') {
         return false;
@@ -134,7 +136,7 @@ enum [[gnu::packed]] current_key {
  * @param key The YAML scalar key (e.g., \"title\", \"id\", \"year\", etc.)
  * @return The associated enum value (e.g., TITLE_KEY), or OTHER_KEY if unknown.
  */
-[[gnu::regcall, gnu::pure]]
+[[nodiscard("useless call if discarded"), gnu::regcall, gnu::pure]]
 enum current_key parse_key(const yaml_char_t *NONNULL key) {
     if (streq(key, "id")) {
         return ID_KEY;
@@ -173,7 +175,7 @@ static struct operation parse_fail(char *NULLABLE s1, char *NULLABLE s2, char *N
     return (struct operation) {.ty = INVALID_OP};
 }
 
-[[gnu::regcall, gnu::nonnull(1), gnu::malloc]]
+[[nodiscard("allocated memory must be freed"), gnu::regcall, gnu::nonnull(1), gnu::malloc]]
 /**
  * Parses a sequence of genres from the YAML stream.
  *
@@ -267,7 +269,7 @@ static char *NULLABLE *NULLABLE parse_genre_list(yaml_parser_t *NONNULL parser) 
     }
 }
 
-[[gnu::regcall, gnu::nonnull(1)]]
+[[nodiscard("allocated memory must be freed"), gnu::regcall, gnu::nonnull(1)]]
 /**
  * Parses a YAML mapping containing a new movie:
  *  title, director, year, and genres fields are required.
@@ -412,7 +414,7 @@ static struct operation parse_movie(yaml_parser_t *NONNULL parser, enum operatio
     }
 }
 
-[[gnu::regcall, gnu::nonnull(1)]]
+[[nodiscard("allocated memory must be freed"), gnu::regcall, gnu::nonnull(1)]]
 /**
  * Parses a smaller mapping that either needs an ID and/or a genre.
  *
