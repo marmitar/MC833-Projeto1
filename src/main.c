@@ -29,13 +29,13 @@ extern int main(void) {
     }
 
     // initialize io_uring
-    struct context *ctx = calloc(1, sizeof(struct context));
+    struct worker_context *ctx = calloc(1, sizeof(struct worker_context));
     bool ok = uring_init(&(ctx->ring));
     if unlikely (!ok) {
         return EXIT_FAILURE;
     }
     int rv = pthread_mutex_init(&(ctx->mutex), NULL);
-    if unlikely(rv != 0) {
+    if unlikely (rv != 0) {
         return EXIT_FAILURE;
     }
 
@@ -71,7 +71,7 @@ extern int main(void) {
     }
 
     printf("server listening on port %d\n", PORT);
-    if likely(post_accept(&(ctx->ring), server_fd)) {
+    if likely (post_accept(&(ctx->ring), server_fd)) {
         io_uring_submit(&(ctx->ring));
     }
 
@@ -95,10 +95,10 @@ extern int main(void) {
     // start accepting
     while (true) {
         rv = pthread_mutex_lock(&(ctx->mutex));
-        if unlikely(rv != 0) {
+        if unlikely (rv != 0) {
             break;
         }
-        if likely(post_accept(&(ctx->ring), server_fd)) {
+        if likely (post_accept(&(ctx->ring), server_fd)) {
             io_uring_submit(&(ctx->ring));
         }
         pthread_mutex_unlock(&(ctx->mutex));

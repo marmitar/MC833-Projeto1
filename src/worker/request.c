@@ -25,7 +25,7 @@
  *
  * @return true if DB_HARD_ERROR was encountered, false otherwise.
  */
-static bool handle_result(int sock_fd, message errmsg, db_result result) {
+static bool handle_result(int sock_fd, message_t errmsg, db_result_t result) {
     if likely (result == DB_SUCCESS) {
         char ok[] = "server: ok\n";
         send(sock_fd, ok, strlen(ok), 0);
@@ -49,8 +49,9 @@ static bool handle_result(int sock_fd, message errmsg, db_result result) {
  * Formats the fields of `movie` and writes them to the socket. Continues returning false so iteration can keep going,
  * unless you want to stop after the first record.
  */
-static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE movie) {
+static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE m) {
     const int sock_fd = INT_FROM_PTR(sock_ptr);
+    const struct movie *NONNULL movie = __builtin_assume_aligned(m, alignof(struct movie));
 
     if unlikely (movie == NULL) {
         char msg[] = "server: null\n";
@@ -106,9 +107,9 @@ static bool get_peer_ip(int sock_fd, socklen_t len, char ip[NONNULL len]) {
     socklen_t sock_len = sizeof(addr);
 
     int rv = getpeername(sock_fd, &addr, &sock_len);
-    if likely(rv == 0) {
+    if likely (rv == 0) {
         const char *p = inet_ntop(AF_INET, &addr, ip, len);
-        if likely(p != NULL) {
+        if likely (p != NULL) {
             ip[len - 1] = '\0';
             return true;
         }
@@ -129,7 +130,7 @@ static bool get_peer_ip(int sock_fd, socklen_t len, char ip[NONNULL len]) {
  * @param db      A non-null pointer to the database connection.
  * @return true if a hard error was encountered (server might stop), false otherwise.
  */
-bool handle_request(int sock_fd, db_conn *NONNULL db) {
+bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
     char ip[32] = "";
     get_peer_ip(sock_fd, 32, ip);
     fprintf(stderr, "thread[%lu]: handling socket %d, peer ip %s\n", pthread_self(), sock_fd, ip);
@@ -156,7 +157,7 @@ bool handle_request(int sock_fd, db_conn *NONNULL db) {
         }
 
         const char *errmsg = NULL;
-        db_result result = DB_SUCCESS;
+        db_result_t result = DB_SUCCESS;
         switch (op.ty) {
             case ADD_MOVIE: {
                 char response[256];

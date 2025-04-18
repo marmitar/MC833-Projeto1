@@ -51,7 +51,7 @@ static const char *NONNULL errmsg_dup(const char *NULLABLE error_message) {
 
 [[gnu::cold]]
 /** Copies the current SQLite error message from `str` into `errmsg`, if non-NULL. */
-static void errmsg_dup_str(message *NULLABLE restrict errmsg, const char str[NULLABLE restrict]) {
+static void errmsg_dup_str(message_t *NULLABLE restrict errmsg, const char str[NULLABLE restrict]) {
     if likely (errmsg != NULL) {
         *errmsg = errmsg_dup(str);
     }
@@ -59,19 +59,19 @@ static void errmsg_dup_str(message *NULLABLE restrict errmsg, const char str[NUL
 
 [[gnu::cold]]
 /** Copies the current SQLite error message from `db` into `errmsg`, if non-NULL. */
-static void errmsg_dup_db(message *NULLABLE errmsg, sqlite3 *NULLABLE db) {
+static void errmsg_dup_db(message_t *NULLABLE errmsg, sqlite3 *NULLABLE db) {
     errmsg_dup_str(errmsg, sqlite3_errmsg(db));
 }
 
 [[gnu::cold]]
 /** Copies the SQLite error string for the error code `rc` into `errmsg`, if non-NULL. */
-static void errmsg_dup_rc(message *NULLABLE errmsg, const int rc) {
+static void errmsg_dup_rc(message_t *NULLABLE errmsg, const int rc) {
     errmsg_dup_str(errmsg, sqlite3_errstr(rc));
 }
 
 [[gnu::format(printf, 3, 4), gnu::nonnull(3)]]
 /** Builds a formatted error message for expected user errors. */
-static void errmsg_printf(message *NULLABLE errmsg, const size_t bufsize, const char *NONNULL restrict format, ...) {
+static void errmsg_printf(message_t *NULLABLE errmsg, const size_t bufsize, const char *NONNULL restrict format, ...) {
     if unlikely (errmsg == NULL) {
         return;
     }
@@ -107,7 +107,7 @@ void db_free_errmsg(const char *NONNULL errmsg) {
 /**
  * Closes an open SQLite3 database connection, free resources and set `errmsg`, if necessary.
  */
-static bool db_close(sqlite3 *NULLABLE db, message *NULLABLE errmsg) {
+static bool db_close(sqlite3 *NULLABLE db, message_t *NULLABLE errmsg) {
     const int rv = sqlite3_close(db);  // safe to call with NULL
     if likely (rv == SQLITE_OK) {
         return true;
@@ -128,8 +128,8 @@ static bool db_close(sqlite3 *NULLABLE db, message *NULLABLE errmsg) {
 /**
  * Open a database at `filepath`, either connecting to an existing database or creating a new one whe `create` is true.
  */
-static sqlite3 *
-    NULLABLE db_open(const char filepath[NONNULL restrict], message *NULLABLE restrict errmsg, bool create) {
+static sqlite3 *NULLABLE
+    db_open(const char filepath[NONNULL restrict], message_t *NULLABLE restrict errmsg, bool create) {
     const int FLAGS = SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_PRIVATECACHE | SQLITE_OPEN_EXRESCODE;
 
     sqlite3 *db = NULL;
@@ -154,7 +154,7 @@ static void db_shutdown(void) {
 
 [[gnu::cold]]
 /** Apply schema from SQL file. */
-static bool db_create_schema(sqlite3 *NONNULL db, message *NULLABLE errmsg) {
+static bool db_create_schema(sqlite3 *NONNULL db, message_t *NULLABLE errmsg) {
     char *errorbuf = NULL;  // will be allocated via sqlite3_malloc, need to copied to std malloc
 
     int rv = sqlite3_exec(db, SCHEMA, nullptr, nullptr, likely(errmsg != NULL) ? &errorbuf : NULL);
@@ -168,7 +168,7 @@ static bool db_create_schema(sqlite3 *NONNULL db, message *NULLABLE errmsg) {
 }
 
 /** Create or migrate database at `filepath`. */
-bool db_setup(const char filepath[NONNULL restrict], message *NULLABLE restrict errmsg) {
+bool db_setup(const char filepath[NONNULL restrict], message_t *NULLABLE restrict errmsg) {
     int rv = sqlite3_initialize();
     if unlikely (rv != SQLITE_OK) {
         errmsg_dup_rc(errmsg, rv);
@@ -205,7 +205,7 @@ bool db_setup(const char filepath[NONNULL restrict], message *NULLABLE restrict 
  * Each buffer holds multiple NUL terminated strings. The strings contents are modifiable, but cannot be increased
  * in-place. A new string slice must be re
  */
-struct string_buffer {
+struct [[gnu::aligned(8)]] string_buffer {
     /** Current allocated size for `data`. */
     size_t capacity;
     /** Currently in use part of the buffer. */
@@ -213,7 +213,10 @@ struct string_buffer {
     /** Modifiable shared string. */
     char *NONNULL restrict data;
 };
+static_assert(sizeof(size_t) == 8);
+static_assert(sizeof(char *) == 8);
 
+/** The step size for each allocation in string_buffer. */
 static const constexpr size_t BUFFER_PAGE_SIZE = 4096;
 static_assert(BUFFER_PAGE_SIZE > 0);
 
@@ -231,6 +234,7 @@ static struct string_buffer *NULLABLE string_buffer_alloc(void) {
         return NULL;
     }
 
+    assert_aligned(struct string_buffer, buffer);
     buffer->data = data;
     buffer->capacity = BUFFER_PAGE_SIZE;
     buffer->in_use = 0;
@@ -284,6 +288,7 @@ static size_t string_buffer_slice(struct string_buffer *NONNULL buffer, size_t s
         return SIZE_MAX;
     }
 
+    assert_aligned(struct string_buffer, buffer);
     buffer->data = data;
     buffer->capacity = final_capacity;
     size_t slice = buffer->in_use;
@@ -300,7 +305,7 @@ static inline void string_buffer_reset(struct string_buffer *NONNULL buffer) {
 /**
  * A connection to the database file, which is a SQLite3 connection with cached statements.
  */
-struct database_connection {
+struct [[]] database_connection {
     /** The actual connection. */
     sqlite3 *NONNULL db;
     /** BEGIN TRANSACTION. */
@@ -334,6 +339,9 @@ struct database_connection {
     /** Internal buffer for string output. */
     struct string_buffer *NONNULL restrict text_buffer;
 };
+static_assert(sizeof(sqlite3 *) == 8);
+static_assert(sizeof(sqlite3_stmt *) == 8);
+static_assert(sizeof(struct string_buffer *) == 8);
 
 [[gnu::regcall, gnu::malloc, gnu::nonnull(1, 3, 4)]]
 /** Build a SQLite statement for persistent use. Returns NULL on failure. */
@@ -342,7 +350,7 @@ static sqlite3_stmt *NULLABLE db_prepare(
     size_t len,
     const char sql[NONNULL restrict len],
     bool *NONNULL has_error,  // shared error flag, for creating multiple statements in series
-    message *NULLABLE restrict errmsg
+    message_t *NULLABLE restrict errmsg
 ) {
     assert(len < INT_MAX);
     assert(len == strlen(sql));
@@ -369,7 +377,7 @@ static sqlite3_stmt *NULLABLE db_prepare(
 
 [[gnu::regcall, gnu::nonnull(1)]]
 /** Create all used statements beforehand, for faster reuse later. */
-static bool db_prepare_stmts(db_conn *NONNULL conn, message *NULLABLE errmsg) {
+static bool db_prepare_stmts(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     sqlite3 *NONNULL db = conn->db;
     bool has_error = false;
 
@@ -388,8 +396,7 @@ static bool db_prepare_stmts(db_conn *NONNULL conn, message *NULLABLE errmsg) {
     sqlite3_stmt *reindex = SQL(
         REINDEX;
     );
-    sqlite3_stmt *insert_movie =
-        SQL(
+    sqlite3_stmt *insert_movie = SQL(
         INSERT INTO movie(title, director, release_year)
             VALUES (:title, :director, :release_year)
             RETURNING movie.id;
@@ -490,12 +497,13 @@ static bool db_prepare_stmts(db_conn *NONNULL conn, message *NULLABLE errmsg) {
 }
 
 /** Connects to the existing database at `filepath`. */
-db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], message *NULLABLE restrict errmsg) {
-    db_conn *conn = calloc(1, sizeof(struct database_connection));
+db_conn_t *NULLABLE db_connect(const char filepath[NONNULL restrict], message_t *NULLABLE restrict errmsg) {
+    db_conn_t *conn = calloc(1, sizeof(struct database_connection));
     if unlikely (conn == NULL) {
         errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
         return NULL;
     }
+    assert_aligned(struct database_connection, conn);
 
     struct string_buffer *text_buffer = string_buffer_alloc();
     if unlikely (text_buffer == NULL) {
@@ -523,7 +531,7 @@ db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], message *NUL
     }
 
     // last verification that all pointers are non null
-    for (size_t i = 0; i < sizeof(db_conn) / sizeof(void *); i++) {
+    for (size_t i = 0; i < sizeof(db_conn_t) / sizeof(void *); i++) {
         const void *const *start = (const void *const *) conn;
         assert(start[i] != NULL);
         (void) start;
@@ -533,7 +541,7 @@ db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], message *NUL
 
 [[gnu::regcall, gnu::nonnull(1, 2, 3)]]
 /** Closes a prepared statement. Used during disconnect. */
-static void db_finalize(sqlite3 *NONNULL db, sqlite3_stmt *NONNULL stmt, bool *NONNULL ok, message *NULLABLE errmsg) {
+static void db_finalize(sqlite3 *NONNULL db, sqlite3_stmt *NONNULL stmt, bool *NONNULL ok, message_t *NULLABLE errmsg) {
     int rv = sqlite3_finalize(stmt);
     if unlikely (rv != SQLITE_OK) {
         // set errmsg on the first error only
@@ -545,7 +553,7 @@ static void db_finalize(sqlite3 *NONNULL db, sqlite3_stmt *NONNULL stmt, bool *N
 }
 
 /** Disconnects to the database and free resources. */
-bool db_disconnect(db_conn *NONNULL conn, message *NULLABLE errmsg) {
+bool db_disconnect(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     bool ok = true;
     sqlite3 *db = conn->db;
     db_finalize(db, conn->op_begin, &ok, errmsg);
@@ -576,7 +584,7 @@ bool db_disconnect(db_conn *NONNULL conn, message *NULLABLE errmsg) {
  * @param rv Return value of the last statement operation.
  * @param rrv Return value of the `sqlite3_reset()` call after that.
  */
-static db_result check_result(const int rv, const int rrv) {
+static db_result_t check_result(const int rv, const int rrv) {
     // if `sqlite3_reset()` fails, we restart the thread
     if unlikely (rrv != SQLITE_OK) {
         return DB_HARD_ERROR;
@@ -705,9 +713,9 @@ static db_result check_result(const int rv, const int rrv) {
 
 [[gnu::regcall, gnu::pure, gnu::nonnull(2)]]
 /** Checks a list of return values sequentially. */
-static db_result check_results(size_t n, const int rv[NONNULL const n], const int rrv) {
+static db_result_t check_results(size_t n, const int rv[NONNULL const n], const int rrv) {
     for (size_t i = 0; i < n; i++) {
-        db_result result = check_result(rv[i], rrv);
+        db_result_t result = check_result(rv[i], rrv);
         if (result != DB_SUCCESS) {
             return result;
         }
@@ -717,7 +725,7 @@ static db_result check_results(size_t n, const int rv[NONNULL const n], const in
 
 [[gnu::regcall, gnu::nonnull(1, 2), gnu::hot]]
 /** Runs a single transaction statement and reset it. */
-static db_result db_transaction_op(db_conn *NONNULL conn, sqlite3_stmt *NONNULL stmt, message *NULLABLE errmsg) {
+static db_result_t db_transaction_op(db_conn_t *NONNULL conn, sqlite3_stmt *NONNULL stmt, message_t *NULLABLE errmsg) {
     int rv = sqlite3_step(stmt);
     int rrv = sqlite3_reset(stmt);
     if unlikely (rv != SQLITE_DONE || rrv != SQLITE_OK) {
@@ -729,25 +737,25 @@ static db_result db_transaction_op(db_conn *NONNULL conn, sqlite3_stmt *NONNULL 
 
 [[gnu::regcall, gnu::nonnull(1), gnu::hot]]
 /** Runs `BEGIN TRANSACTION`. */
-static db_result db_transaction_begin(db_conn *NONNULL conn, message *NULLABLE errmsg) {
+static db_result_t db_transaction_begin(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     return db_transaction_op(conn, conn->op_begin, errmsg);
 }
 
 [[gnu::regcall, gnu::nonnull(1)]]
 /** Runs `ROLLBACK TRANSACTION`. */
-static db_result db_transaction_rollback(db_conn *NONNULL conn, message *NULLABLE errmsg) {
+static db_result_t db_transaction_rollback(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     return db_transaction_op(conn, conn->op_rollback, errmsg);
 }
 
 [[gnu::regcall, gnu::nonnull(1), gnu::hot]]
 /** Runs `COMMIT TRANSACTION`. */
-static db_result db_transaction_commit(db_conn *NONNULL conn, message *NULLABLE errmsg) {
+static db_result_t db_transaction_commit(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     return db_transaction_op(conn, conn->op_commit, errmsg);
 }
 
 [[gnu::regcall, gnu::nonnull(1), gnu::hot]]
 /** Step through statement, ignoring results. */
-static db_result db_eval_stmt(sqlite3_stmt *NONNULL stmt) {
+static db_result_t db_eval_stmt(sqlite3_stmt *NONNULL stmt) {
     int rv = SQLITE_OK;
     do {
         rv = sqlite3_step(stmt);
@@ -778,7 +786,7 @@ static size_t list_len(const char *NULLABLE const list[NONNULL]) {
 
 [[gnu::regcall, gnu::nonnull(2)]]
 /** Runs `op_insert_movie` inside an open transaction. */
-static db_result register_movie_in_transaction(const db_conn conn, struct movie *NONNULL movie) {
+static db_result_t register_movie_in_transaction(const db_conn_t conn, struct movie *NONNULL movie) {
     const size_t genres = list_len(movie->genres);
 
     // add all movie genres to db
@@ -789,7 +797,7 @@ static db_result register_movie_in_transaction(const db_conn conn, struct movie 
             return check_result(rv, sqlite3_reset(conn.op_insert_genre));
         }
 
-        db_result res = db_eval_stmt(conn.op_insert_genre);
+        db_result_t res = db_eval_stmt(conn.op_insert_genre);
         if unlikely (res != DB_SUCCESS) {
             return res;
         }
@@ -830,7 +838,7 @@ static db_result register_movie_in_transaction(const db_conn conn, struct movie 
             return check_results(2, rvv, sqlite3_reset(conn.op_insert_genre_link));
         }
 
-        db_result res = db_eval_stmt(conn.op_insert_genre_link);
+        db_result_t res = db_eval_stmt(conn.op_insert_genre_link);
         if unlikely (res != DB_SUCCESS) {
             return res;
         }
@@ -840,11 +848,15 @@ static db_result register_movie_in_transaction(const db_conn conn, struct movie 
 }
 
 /** Registers a new movie and updates its 'id' if successful. */
-db_result db_register_movie(db_conn *NONNULL conn, struct movie *NONNULL movie, message *NULLABLE restrict errmsg) {
+db_result_t db_register_movie(
+    db_conn_t *NONNULL conn,
+    struct movie *NONNULL movie,
+    message_t *NULLABLE restrict errmsg
+) {
     assert(movie != NULL);
     assert(movie->id == 0);
 
-    db_result res = db_transaction_begin(conn, errmsg);
+    db_result_t res = db_transaction_begin(conn, errmsg);
     if unlikely (res != DB_SUCCESS) {
         return res;
     }
@@ -861,8 +873,8 @@ db_result db_register_movie(db_conn *NONNULL conn, struct movie *NONNULL movie, 
 
 [[gnu::regcall, gnu::nonnull(3)]]
 /** Runs `op_insert_genre_link` inside an open transaction. */
-static db_result add_genres_in_transaction(
-    const db_conn conn,
+static db_result_t add_genres_in_transaction(
+    const db_conn_t conn,
     size_t len,
     const char *NONNULL const genres[NONNULL restrict len],
     int64_t movie_id
@@ -874,7 +886,7 @@ static db_result add_genres_in_transaction(
             return check_result(rv, sqlite3_reset(conn.op_insert_genre));
         }
 
-        db_result res = db_eval_stmt(conn.op_insert_genre);
+        db_result_t res = db_eval_stmt(conn.op_insert_genre);
         if unlikely (res != DB_SUCCESS) {
             return res;
         }
@@ -888,7 +900,7 @@ static db_result add_genres_in_transaction(
             return check_results(2, (int[2]) {rv1, rv2}, sqlite3_reset(conn.op_insert_genre_link));
         }
 
-        db_result res = db_eval_stmt(conn.op_insert_genre_link);
+        db_result_t res = db_eval_stmt(conn.op_insert_genre_link);
         if unlikely (res != DB_SUCCESS) {
             return res;
         }
@@ -897,11 +909,11 @@ static db_result add_genres_in_transaction(
 }
 
 /** Adds a list of genres tp an existing movie. */
-db_result db_add_genres(
-    db_conn *NONNULL conn,
+db_result_t db_add_genres(
+    db_conn_t *NONNULL conn,
     int64_t movie_id,
     const char *NULLABLE const genres[NONNULL restrict],
-    message *NULLABLE restrict errmsg
+    message_t *NULLABLE restrict errmsg
 ) {
     const size_t len = list_len(genres);
     if unlikely (len == 0) {
@@ -909,7 +921,7 @@ db_result db_add_genres(
         return DB_USER_ERROR;
     }
 
-    db_result res = db_transaction_begin(conn, errmsg);
+    db_result_t res = db_transaction_begin(conn, errmsg);
     if unlikely (res != DB_SUCCESS) {
         return res;
     }
@@ -937,7 +949,7 @@ db_result db_add_genres(
 
 [[gnu::regcall]]
 /** Runs `op_delete_movie` inside its automatic transaction. */
-static db_result delete_movie_in_transaction(const db_conn conn, int64_t movie_id) {
+static db_result_t delete_movie_in_transaction(const db_conn_t conn, int64_t movie_id) {
     int rv = sqlite3_bind_int64(conn.op_delete_movie, 1, movie_id);
     if unlikely (rv != SQLITE_OK) {
         sqlite3_clear_bindings(conn.op_delete_movie);
@@ -948,9 +960,9 @@ static db_result delete_movie_in_transaction(const db_conn conn, int64_t movie_i
 }
 
 /** Removes a movie from the database. */
-db_result db_delete_movie(db_conn *NONNULL conn, int64_t movie_id, message *NULLABLE errmsg) {
+db_result_t db_delete_movie(db_conn_t *NONNULL conn, int64_t movie_id, message_t *NULLABLE errmsg) {
     // no need to create an explicit transaction for a single statement
-    const db_result res = delete_movie_in_transaction(*conn, movie_id);
+    const db_result_t res = delete_movie_in_transaction(*conn, movie_id);
     if unlikely (res != DB_SUCCESS) {
         errmsg_dup_db(errmsg, conn->db);
         return res;
@@ -987,7 +999,7 @@ static size_t get_column_in_slice(struct string_buffer *NONNULL buffer, sqlite3_
 
 [[gnu::regcall, gnu::nonnull(1, 2, 3, 4, 5)]]
 /** Build movie data into `buffer` and correct pointers to `movie`. */
-static db_result get_movie_with_genres(
+static db_result_t get_movie_with_genres(
     struct string_buffer *NONNULL buffer,
     sqlite3_stmt *NONNULL outer_stmt,
     sqlite3_stmt *NONNULL inner_stmt,
@@ -1042,6 +1054,7 @@ static db_result get_movie_with_genres(
             return DB_RUNTIME_ERROR;
         }
 
+        assert_aligned(struct movie, m);
         *movie = m;
         *genre_count = count;
     }
@@ -1065,7 +1078,7 @@ static db_result get_movie_with_genres(
 
 [[gnu::regcall, gnu::nonnull(1, 2, 3, 4, 5)]]
 /** Iterate over movie entries, calling `callback` on each and returning the final result in `movie`.  */
-static db_result iter_movies(
+static db_result_t iter_movies(
     struct string_buffer *NONNULL buffer,
     sqlite3_stmt *NONNULL outer_stmt,
     sqlite3_stmt *NONNULL inner_stmt,
@@ -1078,9 +1091,10 @@ static db_result iter_movies(
     if unlikely (current_movie == NULL) {
         return DB_RUNTIME_ERROR;
     }
+    assert_aligned(struct movie, current_movie);
 
     int rv = SQLITE_OK;
-    db_result res = DB_SUCCESS;
+    db_result_t res = DB_SUCCESS;
     while ((rv = sqlite3_step(outer_stmt)) == SQLITE_ROW) {
         res = get_movie_with_genres(buffer, outer_stmt, inner_stmt, &current_movie, &genres);
         if unlikely (res != DB_SUCCESS) {
@@ -1117,7 +1131,11 @@ static bool count_iterations(void *NONNULL counter, [[maybe_unused]] const struc
 
 [[gnu::regcall, gnu::nonnull(3)]]
 /** Read a single movie and write to `movie`. */
-static db_result get_movie_in_transaction(const db_conn conn, int64_t movie_id, struct movie *NONNULL *NONNULL movie) {
+static db_result_t get_movie_in_transaction(
+    const db_conn_t conn,
+    int64_t movie_id,
+    struct movie *NONNULL *NONNULL movie
+) {
     int rv = sqlite3_bind_int64(conn.op_select_movie, 1, movie_id);
     if unlikely (rv != SQLITE_OK) {
         sqlite3_clear_bindings(conn.op_select_movie);
@@ -1125,7 +1143,7 @@ static db_result get_movie_in_transaction(const db_conn conn, int64_t movie_id, 
     }
 
     unsigned count = 0;
-    const db_result res = iter_movies(
+    const db_result_t res = iter_movies(
         conn.text_buffer,
         conn.op_select_movie,
         conn.op_select_movie_genres,
@@ -1141,13 +1159,13 @@ static db_result get_movie_in_transaction(const db_conn conn, int64_t movie_id, 
 }
 
 /** Get a movie from the database. */
-db_result db_get_movie(
-    db_conn *NONNULL conn,
+db_result_t db_get_movie(
+    db_conn_t *NONNULL conn,
     int64_t movie_id,
     struct movie *NONNULL *NONNULL movie,
-    message *NULLABLE restrict errmsg
+    message_t *NULLABLE restrict errmsg
 ) {
-    db_result res = db_transaction_begin(conn, errmsg);
+    db_result_t res = db_transaction_begin(conn, errmsg);
     if unlikely (res != DB_SUCCESS) {
         return res;
     }
@@ -1182,13 +1200,13 @@ db_result db_get_movie(
 
 [[gnu::regcall, gnu::nonnull(2)]]
 /** Read all movies and run callback on each. */
-static db_result list_movies_in_transaction(
-    const db_conn conn,
+static db_result_t list_movies_in_transaction(
+    const db_conn_t conn,
     [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data
 ) {
     struct movie *last_movie = NULL;
-    const db_result res = iter_movies(
+    const db_result_t res = iter_movies(
         conn.text_buffer,
         conn.op_select_all_movies,
         conn.op_select_movie_genres,
@@ -1206,13 +1224,13 @@ static db_result list_movies_in_transaction(
 }
 
 /** List all movies with full information. */
-db_result db_list_movies(
-    db_conn *NONNULL conn,
+db_result_t db_list_movies(
+    db_conn_t *NONNULL conn,
     [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data,
-    message *NULLABLE restrict errmsg
+    message_t *NULLABLE restrict errmsg
 ) {
-    db_result res = db_transaction_begin(conn, errmsg);
+    db_result_t res = db_transaction_begin(conn, errmsg);
     if unlikely (res != DB_SUCCESS) {
         return res;
     }
@@ -1233,8 +1251,8 @@ db_result db_list_movies(
 
 [[gnu::regcall, gnu::nonnull(2)]]
 /** Search through movies and run callback on each. */
-static db_result search_movies_in_transaction(
-    const db_conn conn,
+static db_result_t search_movies_in_transaction(
+    const db_conn_t conn,
     const char genre[NONNULL restrict const],
     [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data
@@ -1246,7 +1264,7 @@ static db_result search_movies_in_transaction(
     }
 
     struct movie *last_movie = NULL;
-    const db_result res = iter_movies(
+    const db_result_t res = iter_movies(
         conn.text_buffer,
         conn.op_select_movies_genre,
         conn.op_select_movie_genres,
@@ -1264,14 +1282,14 @@ static db_result search_movies_in_transaction(
 }
 
 /* List all movies with a given genre. */
-db_result db_search_movies_by_genre(
-    db_conn *NONNULL conn,
+db_result_t db_search_movies_by_genre(
+    db_conn_t *NONNULL conn,
     const char genre[NONNULL restrict const],
     [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data,
-    message *NULLABLE restrict errmsg
+    message_t *NULLABLE restrict errmsg
 ) {
-    db_result res = db_transaction_begin(conn, errmsg);
+    db_result_t res = db_transaction_begin(conn, errmsg);
     if unlikely (res != DB_SUCCESS) {
         return res;
     }
@@ -1292,7 +1310,7 @@ db_result db_search_movies_by_genre(
 
 [[gnu::regcall, gnu::nonnull(1, 2, 3)]]
 /** Build summary data using `buffer`. */
-static db_result get_summary(
+static db_result_t get_summary(
     struct string_buffer *NONNULL buffer,
     sqlite3_stmt *NONNULL stmt,
     struct movie_summary *NONNULL summary
@@ -1313,14 +1331,14 @@ static db_result get_summary(
 
 [[gnu::regcall, gnu::nonnull(2)]]
 /** Read title and id of all movies and run callback on each. */
-static db_result list_summaries_in_transaction(
-    const db_conn conn,
+static db_result_t list_summaries_in_transaction(
+    const db_conn_t conn,
     [[gnu::regcall]] bool callback(void *UNSPECIFIED data, struct movie_summary summary),
     void *NULLABLE callback_data
 ) {
 
     int rv = SQLITE_OK;
-    db_result res = DB_SUCCESS;
+    db_result_t res = DB_SUCCESS;
     while ((rv = sqlite3_step(conn.op_select_all_titles)) == SQLITE_ROW) {
         struct movie_summary summary = {.id = -1, .title = ""};
         res = get_summary(conn.text_buffer, conn.op_select_all_titles, &summary);
@@ -1346,13 +1364,13 @@ static db_result list_summaries_in_transaction(
 }
 
 /** List all movies with reduced information. */
-db_result db_list_summaries(
-    db_conn *NONNULL conn,
+db_result_t db_list_summaries(
+    db_conn_t *NONNULL conn,
     [[gnu::regcall]] bool callback(void *UNSPECIFIED data, struct movie_summary summary),
     void *NULLABLE callback_data,
-    message *NULLABLE restrict errmsg
+    message_t *NULLABLE restrict errmsg
 ) {
-    db_result res = db_transaction_begin(conn, errmsg);
+    db_result_t res = db_transaction_begin(conn, errmsg);
     if unlikely (res != DB_SUCCESS) {
         return res;
     }

@@ -2,6 +2,7 @@
 /** Handles database operations. */
 #define SRC_DATABASE_H
 
+#include <stdalign.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -12,10 +13,10 @@
 static constexpr const char DATABASE[] = "movies.db";
 
 /** Opaque handle to a database connection. */
-typedef struct database_connection db_conn;
+typedef struct database_connection db_conn_t;
 
 /** Output error messages, never nullable. */
-typedef const char *NONNULL message;
+typedef const char *NONNULL message_t;
 
 [[nodiscard("cannot use database on false"), gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
@@ -27,7 +28,7 @@ typedef const char *NONNULL message;
  * @note The caller is responsible for eventually calling `db_close` to release resources and `db_free_errmsg` to free
  *      any error message.
  */
-bool db_setup(const char filepath[NONNULL restrict], message *NULLABLE restrict errmsg);
+bool db_setup(const char filepath[NONNULL restrict], message_t *NULLABLE restrict errmsg);
 
 [[gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
@@ -36,7 +37,7 @@ bool db_setup(const char filepath[NONNULL restrict], message *NULLABLE restrict 
  * This function releases the memory allocated for the error message returned by any database function. If `errmsg` is
  * NULL, no action is taken. After calling this function, `errmsg` becomes invalid.
  */
-void db_free_errmsg(message errmsg);
+void db_free_errmsg(message_t errmsg);
 
 [[nodiscard("allocated memory must be freed"), gnu::regcall, gnu::malloc, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**
@@ -48,7 +49,7 @@ void db_free_errmsg(message errmsg);
  * @note The caller is responsible for eventually calling `db_close` to release resources and `db_free_errmsg` to free
  *      any error message.
  */
-db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], message *NULLABLE restrict errmsg);
+db_conn_t *NULLABLE db_connect(const char filepath[NONNULL restrict], message_t *NULLABLE restrict errmsg);
 
 [[gnu::regcall, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**
@@ -59,7 +60,7 @@ db_conn *NULLABLE db_connect(const char filepath[NONNULL restrict], message *NUL
  *
  * @note The caller must also call `db_free_errmsg` if an error message is set.
  */
-bool db_disconnect(db_conn *NONNULL conn, message *NULLABLE errmsg);
+bool db_disconnect(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg);
 
 /** Possible results for database operations. */
 typedef enum [[gnu::packed]] db_result {
@@ -71,12 +72,13 @@ typedef enum [[gnu::packed]] db_result {
     DB_USER_ERROR,
     /** Unreacoverable error. Stop the thread. */
     DB_HARD_ERROR
-} db_result;
+} db_result_t;
+static_assert(sizeof(db_result_t) == 1);
 
 /**
  * Represents a single movie record, including an embedded list of genres.
  */
-struct movie {
+struct [[gnu::aligned(8)]] movie {
     /** Unique identifier for the movie entry in the database. */
     int64_t id;  // zero for adding
     /** Movie title. */
@@ -88,6 +90,7 @@ struct movie {
     /** `NULL` terminated list of genres for the movie. */
     const char *NULLABLE genres[];
 };
+static_assert(sizeof(struct movie) == 32);
 
 /**
  * Short representation of a movie.
@@ -98,6 +101,7 @@ struct movie_summary {
     /** Embedded movie title. */
     const char *NONNULL title;
 };
+static_assert(sizeof(struct movie_summary) == 16);
 
 [[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
@@ -109,7 +113,11 @@ struct movie_summary {
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
  stores an error message there.
  */
-db_result db_register_movie(db_conn *NONNULL conn, struct movie *NONNULL movie, message *NULLABLE restrict errmsg);
+db_result_t db_register_movie(
+    db_conn_t *NONNULL conn,
+    struct movie *NONNULL movie,
+    message_t *NULLABLE restrict errmsg
+);
 
 [[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
@@ -120,11 +128,11 @@ db_result db_register_movie(db_conn *NONNULL conn, struct movie *NONNULL movie, 
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
  stores an error message there.
  */
-db_result db_add_genres(
-    db_conn *NONNULL conn,
+db_result_t db_add_genres(
+    db_conn_t *NONNULL conn,
     int64_t movie_id,
     const char *NULLABLE const genres[NONNULL restrict],
-    message *NULLABLE restrict errmsg
+    message_t *NULLABLE restrict errmsg
 );
 
 [[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
@@ -134,7 +142,7 @@ db_result db_add_genres(
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
  stores an error message there.
  */
-db_result db_delete_movie(db_conn *NONNULL conn, int64_t movie_id, message *NULLABLE restrict errmsg);
+db_result_t db_delete_movie(db_conn_t *NONNULL conn, int64_t movie_id, message_t *NULLABLE restrict errmsg);
 
 [[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
@@ -143,14 +151,14 @@ db_result db_delete_movie(db_conn *NONNULL conn, int64_t movie_id, message *NULL
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
  stores an error message there.
  */
-db_result db_get_movie(
-    db_conn *NONNULL conn,
+db_result_t db_get_movie(
+    db_conn_t *NONNULL conn,
     int64_t movie_id,
     struct movie *NONNULL *NONNULL movie,
-    message *NULLABLE restrict errmsg
+    message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::nothrow]]
 /**
  * List all movies from the database and run `callback` on each one.
  *
@@ -159,14 +167,14 @@ db_result db_get_movie(
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
  stores an error message there.
  */
-db_result db_list_movies(
-    db_conn *NONNULL conn,
-    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+db_result_t db_list_movies(
+    db_conn_t *NONNULL conn,
+    [[gnu::regcall, gnu::nothrow]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data,
-    message *NULLABLE restrict errmsg
+    message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2, 3), gnu::hot, gnu::nothrow]]
 /**
  * List all movies with a given genre and run `callback` on each one.
  *
@@ -175,15 +183,15 @@ db_result db_list_movies(
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
  stores an error message there.
  */
-db_result db_search_movies_by_genre(
-    db_conn *NONNULL conn,
+db_result_t db_search_movies_by_genre(
+    db_conn_t *NONNULL conn,
     const char genre[NONNULL restrict const],
-    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    [[gnu::regcall, gnu::nothrow]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data,
-    message *NULLABLE restrict errmsg
+    message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::nothrow]]
 /**
  * List summaries of all movies in the database and run `callback` on each summary.
  *
@@ -192,11 +200,11 @@ db_result db_search_movies_by_genre(
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
  stores an error message there.
  */
-db_result db_list_summaries(
-    db_conn *NONNULL conn,
-    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, struct movie_summary summary),
+db_result_t db_list_summaries(
+    db_conn_t *NONNULL conn,
+    [[gnu::regcall, gnu::nothrow]] bool callback(void *UNSPECIFIED data, struct movie_summary summary),
     void *NULLABLE callback_data,
-    message *NULLABLE restrict errmsg
+    message_t *NULLABLE restrict errmsg
 );
 
 #endif  // SRC_DATABASE_H

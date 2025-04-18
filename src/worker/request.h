@@ -19,6 +19,6 @@
  * @param db      A non-null pointer to the open database connection.
  * @return true if a hard failure occurred and the server should possibly shut down, false otherwise.
  */
-bool handle_request(int sock_fd, db_conn *NONNULL db);
+bool handle_request(int sock_fd, db_conn_t *NONNULL db);
 
 #endif  // SRC_WORKER_REQUEST_HANDLER_H

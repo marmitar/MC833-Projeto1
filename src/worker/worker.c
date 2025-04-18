@@ -27,10 +27,10 @@ static constexpr const size_t IORING_QUEUE_DEPTH = 64;
  */
 static void *NULLABLE worker_thread(void *NONNULL arg) {
     const pthread_t id = pthread_self();
-    struct context *ctx = (struct context *) arg;
+    struct worker_context *ctx = (struct worker_context *) arg;
 
     const char *errmsg = NULL;
-    db_conn *db = db_connect(DATABASE, &errmsg);
+    db_conn_t *db = db_connect(DATABASE, &errmsg);
     if unlikely (db == NULL) {
         fprintf(stderr, "thread[%lu]: db_connect error: %s\n", id, errmsg);
         db_free_errmsg(errmsg);
@@ -40,7 +40,7 @@ static void *NULLABLE worker_thread(void *NONNULL arg) {
     bool stop = false;
     while (!stop) {
         int rv = pthread_mutex_lock(&(ctx->mutex));
-        if unlikely(rv != 0) {
+        if unlikely (rv != 0) {
             stop = true;
             continue;
         }
@@ -95,7 +95,7 @@ unsigned cpu_count(void) {
 /**
  * Start a worker thread.
  */
-bool start_worker(pthread_t *NONNULL id, struct context *NONNULL ctx) {
+bool start_worker(pthread_t *NONNULL id, struct worker_context *NONNULL ctx) {
     return pthread_create(id, NULL, worker_thread, ctx) == 0;
 }
 

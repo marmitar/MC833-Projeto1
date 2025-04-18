@@ -381,6 +381,7 @@ static struct operation parse_movie(yaml_parser_t *NONNULL parser, enum operatio
                     if unlikely (movie == NULL) {
                         return parse_fail(title, director, genres);
                     }
+                    assert_aligned(struct movie, movie);
 
                     movie->id = 0;
                     movie->title = title;
@@ -427,8 +428,12 @@ static struct operation parse_movie(yaml_parser_t *NONNULL parser, enum operatio
  *
  * @return An operation with a struct movie_key containing the relevant fields, or INVALID_OP on error.
  */
-static struct operation
-    parse_movie_key(yaml_parser_t *NONNULL parser, enum operation_ty ty, bool needs_id, bool needs_genre) {
+static struct operation parse_movie_key(
+    yaml_parser_t *NONNULL parser,
+    enum operation_ty ty,
+    bool needs_id,
+    bool needs_genre
+) {
     char *genre = NULL;
     int64_t id = 0;
 

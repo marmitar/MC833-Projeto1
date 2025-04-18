@@ -43,4 +43,7 @@
 /** Recover integer from callback pointer. */
 #define INT_FROM_PTR(p) ((int) (intptr_t) (p))
 
+/** Verifies that the pointer is aligned correctly after allocation. */
+#define assert_aligned(ty, ptr) assert(((uintptr_t) (ptr)) % alignof(ty) == 0)
+
 #endif  // SRC_DEFINES_H
