@@ -51,7 +51,7 @@ static bool handle_result(int sock_fd, message_t errmsg, db_result_t result) {
  */
 static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE m) {
     const int sock_fd = INT_FROM_PTR(sock_ptr);
-    const struct movie *NONNULL movie = __builtin_assume_aligned(m, alignof(struct movie));
+    const struct movie *NONNULL movie = get_aligned(struct movie, m);
 
     if unlikely (movie == NULL) {
         char msg[] = "server: null\n";

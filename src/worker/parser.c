@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -377,11 +378,11 @@ static struct operation parse_movie(yaml_parser_t *NONNULL parser, enum operatio
                 // try to close the current operation
                 if likely (title != NULL && director != NULL && needs_year && genres != NULL) {
                     size_t len = list_len((const char *const *) genres);
-                    struct movie *movie = malloc(sizeof(struct movie) + (len + 1) * sizeof(char *));
-                    if unlikely (movie == NULL) {
+                    struct movie *m = malloc(offsetof(struct movie, genres) + (len + 1) * sizeof(char *));
+                    if unlikely (m == NULL) {
                         return parse_fail(title, director, genres);
                     }
-                    assert_aligned(struct movie, movie);
+                    struct movie *NONNULL movie = get_aligned(struct movie, m);
 
                     movie->id = 0;
                     movie->title = title;

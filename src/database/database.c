@@ -205,28 +205,30 @@ bool db_setup(const char filepath[NONNULL restrict], message_t *NULLABLE restric
  * Each buffer holds multiple NUL terminated strings. The strings contents are modifiable, but cannot be increased
  * in-place. A new string slice must be re
  */
-struct [[gnu::aligned(8)]] string_buffer {
+struct [[gnu::aligned(sizeof(size_t))]] string_buffer {
     /** Current allocated size for `data`. */
     size_t capacity;
     /** Currently in use part of the buffer. */
     size_t in_use;
     /** Modifiable shared string. */
     char *NONNULL restrict data;
+
+    // sanity check
+    static_assert(sizeof(size_t) == sizeof(char *));
 };
-static_assert(sizeof(size_t) == 8);
-static_assert(sizeof(char *) == 8);
 
 /** The step size for each allocation in string_buffer. */
 static const constexpr size_t BUFFER_PAGE_SIZE = 4096;
-static_assert(BUFFER_PAGE_SIZE > 0);
+static_assert(BUFFER_PAGE_SIZE > 0, "Invalid page size.");
 
-[[gnu::regcall, gnu::malloc]]
+[[gnu::regcall, gnu::malloc, gnu::assume_aligned(alignof(struct string_buffer))]]
 /** Allocates initial memory for a string buffer. */
 static struct string_buffer *NULLABLE string_buffer_alloc(void) {
-    struct string_buffer *buffer = calloc(1, sizeof(struct string_buffer));
-    if unlikely (buffer == NULL) {
+    struct string_buffer *b = calloc(1, sizeof(struct string_buffer));
+    if unlikely (b == NULL) {
         return NULL;
     }
+    struct string_buffer *NONNULL buffer = get_aligned(struct string_buffer, b);
 
     char *data = malloc(BUFFER_PAGE_SIZE * sizeof(char));
     if unlikely (data == NULL) {
@@ -234,7 +236,6 @@ static struct string_buffer *NULLABLE string_buffer_alloc(void) {
         return NULL;
     }
 
-    assert_aligned(struct string_buffer, buffer);
     buffer->data = data;
     buffer->capacity = BUFFER_PAGE_SIZE;
     buffer->in_use = 0;
@@ -261,8 +262,10 @@ static inline size_t ceil_div(size_t a, size_t b) {
  *
  * Returns the index for the slice, or `SIZE_MAX` if a slice of `size` bytes could be generated.
  */
-static size_t string_buffer_slice(struct string_buffer *NONNULL buffer, size_t size) {
-    assert(buffer->capacity >= buffer->in_use);
+static size_t string_buffer_slice(struct string_buffer *NONNULL b, size_t size) {
+    struct string_buffer *NONNULL buffer = get_aligned(struct string_buffer, b);
+
+    assume(buffer->capacity >= buffer->in_use);
     if unlikely (size == SIZE_MAX) {
         return SIZE_MAX;
     }
@@ -278,7 +281,7 @@ static size_t string_buffer_slice(struct string_buffer *NONNULL buffer, size_t s
     if unlikely (ckd_add(&final_size, buffer->in_use, actual_size)) {
         return SIZE_MAX;
     }
-    assert(final_size > buffer->in_use);
+    assume(final_size > buffer->in_use);
 
     const size_t alloc_pages = ceil_div(final_size, BUFFER_PAGE_SIZE);
     const size_t final_capacity = alloc_pages * BUFFER_PAGE_SIZE;
@@ -286,9 +289,7 @@ static size_t string_buffer_slice(struct string_buffer *NONNULL buffer, size_t s
     char *data = realloc(buffer->data, final_capacity * sizeof(char));
     if unlikely (data == NULL) {
         return SIZE_MAX;
-    }
-
-    assert_aligned(struct string_buffer, buffer);
+    };
     buffer->data = data;
     buffer->capacity = final_capacity;
     size_t slice = buffer->in_use;
@@ -305,9 +306,11 @@ static inline void string_buffer_reset(struct string_buffer *NONNULL buffer) {
 /**
  * A connection to the database file, which is a SQLite3 connection with cached statements.
  */
-struct [[]] database_connection {
+struct[[]] database_connection {
     /** The actual connection. */
     sqlite3 *NONNULL db;
+    /** Internal buffer for string output. */
+    struct string_buffer *NONNULL restrict text_buffer;
     /** BEGIN TRANSACTION. */
     sqlite3_stmt *NONNULL op_begin;
     /** COMMIT (or END) TRANSACTION. */
@@ -336,12 +339,7 @@ struct [[]] database_connection {
     sqlite3_stmt *NONNULL op_select_movie_genres;
     /** List all movies for a single genre. */
     sqlite3_stmt *NONNULL op_select_movies_genre;
-    /** Internal buffer for string output. */
-    struct string_buffer *NONNULL restrict text_buffer;
 };
-static_assert(sizeof(sqlite3 *) == 8);
-static_assert(sizeof(sqlite3_stmt *) == 8);
-static_assert(sizeof(struct string_buffer *) == 8);
 
 [[gnu::regcall, gnu::malloc, gnu::nonnull(1, 3, 4)]]
 /** Build a SQLite statement for persistent use. Returns NULL on failure. */
@@ -352,8 +350,8 @@ static sqlite3_stmt *NULLABLE db_prepare(
     bool *NONNULL has_error,  // shared error flag, for creating multiple statements in series
     message_t *NULLABLE restrict errmsg
 ) {
-    assert(len < INT_MAX);
-    assert(len == strlen(sql));
+    assume(len < INT_MAX);
+    assume(len == strlen(sql));
     // skip prepare if an error already happened before
     if unlikely (*has_error) {
         return NULL;
@@ -367,11 +365,11 @@ static sqlite3_stmt *NULLABLE db_prepare(
     if unlikely (rv != SQLITE_OK) {
         *has_error = true;
         errmsg_dup_db(errmsg, db);
-        assert(stmt == NULL);
+        assume(stmt == NULL);
         return NULL;
     }
 
-    assert(tail == &sql[len]);
+    assume(tail == &sql[len]);
     return stmt;
 }
 
@@ -474,8 +472,8 @@ static bool db_prepare_stmts(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg
     }
 
 #define set_stmt(name)      \
-    assert((name) != NULL); \
-    conn->op_##name = (sqlite3_stmt * NONNULL)(name)
+    assume((name) != NULL); \
+    conn->op_##name = (name)
 
     set_stmt(begin);
     set_stmt(commit);
@@ -498,12 +496,12 @@ static bool db_prepare_stmts(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg
 
 /** Connects to the existing database at `filepath`. */
 db_conn_t *NULLABLE db_connect(const char filepath[NONNULL restrict], message_t *NULLABLE restrict errmsg) {
-    db_conn_t *conn = calloc(1, sizeof(struct database_connection));
-    if unlikely (conn == NULL) {
+    db_conn_t *c = calloc(1, sizeof(struct database_connection));
+    if unlikely (c == NULL) {
         errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
         return NULL;
     }
-    assert_aligned(struct database_connection, conn);
+    db_conn_t *NONNULL conn = get_aligned(struct database_connection, c);
 
     struct string_buffer *text_buffer = string_buffer_alloc();
     if unlikely (text_buffer == NULL) {
@@ -533,8 +531,7 @@ db_conn_t *NULLABLE db_connect(const char filepath[NONNULL restrict], message_t 
     // last verification that all pointers are non null
     for (size_t i = 0; i < sizeof(db_conn_t) / sizeof(void *); i++) {
         const void *const *start = (const void *const *) conn;
-        assert(start[i] != NULL);
-        (void) start;
+        assume(start[i] != NULL);
     }
     return conn;
 }
@@ -853,8 +850,8 @@ db_result_t db_register_movie(
     struct movie *NONNULL movie,
     message_t *NULLABLE restrict errmsg
 ) {
-    assert(movie != NULL);
-    assert(movie->id == 0);
+    assume(movie != NULL);
+    assume(movie->id == 0);
 
     db_result_t res = db_transaction_begin(conn, errmsg);
     if unlikely (res != DB_SUCCESS) {
@@ -1043,19 +1040,18 @@ static db_result_t get_movie_with_genres(
         return check_result(rv, rrv);
     }
 
-    constexpr size_t MAX_GENRES = (SIZE_MAX - sizeof(struct movie)) / sizeof(char *);
+    constexpr size_t MAX_GENRES = (SIZE_MAX - offsetof(struct movie, genres)) / sizeof(char *);
     if unlikely (count >= MAX_GENRES) {
         return DB_RUNTIME_ERROR;
     }
 
     if (*genre_count < count) {
-        struct movie *m = realloc(*movie, sizeof(struct movie) + (count + 1) * sizeof(char *));
+        struct movie *m = realloc(*movie, offsetof(struct movie, genres) + (count + 1) * sizeof(char *));
         if unlikely (m == NULL) {
             return DB_RUNTIME_ERROR;
         }
 
-        assert_aligned(struct movie, m);
-        *movie = m;
+        *movie = get_aligned(struct movie, m);
         *genre_count = count;
     }
 
@@ -1087,11 +1083,11 @@ static db_result_t iter_movies(
     void *NULLABLE callback_data
 ) {
     size_t genres = 0;
-    struct movie *current_movie = malloc(sizeof(struct movie) + (genres + 1) * sizeof(char *));
-    if unlikely (current_movie == NULL) {
+    struct movie *m = malloc(offsetof(struct movie, genres) + (genres + 1) * sizeof(char *));
+    if unlikely (m == NULL) {
         return DB_RUNTIME_ERROR;
     }
-    assert_aligned(struct movie, current_movie);
+    struct movie *NONNULL current_movie = get_aligned(struct movie, m);
 
     int rv = SQLITE_OK;
     db_result_t res = DB_SUCCESS;

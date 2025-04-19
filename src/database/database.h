@@ -73,12 +73,13 @@ typedef enum [[gnu::packed]] db_result {
     /** Unreacoverable error. Stop the thread. */
     DB_HARD_ERROR
 } db_result_t;
+
 static_assert(sizeof(db_result_t) == 1);
 
 /**
  * Represents a single movie record, including an embedded list of genres.
  */
-struct [[gnu::aligned(8)]] movie {
+struct [[gnu::aligned(sizeof(int64_t))]] movie {
     /** Unique identifier for the movie entry in the database. */
     int64_t id;  // zero for adding
     /** Movie title. */
@@ -90,7 +91,8 @@ struct [[gnu::aligned(8)]] movie {
     /** `NULL` terminated list of genres for the movie. */
     const char *NULLABLE genres[];
 };
-static_assert(sizeof(struct movie) == 32);
+
+static_assert(sizeof(struct movie) == offsetof(struct movie, genres));
 
 /**
  * Short representation of a movie.
@@ -101,7 +103,8 @@ struct movie_summary {
     /** Embedded movie title. */
     const char *NONNULL title;
 };
-static_assert(sizeof(struct movie_summary) == 16);
+// even on 32 bit, fields should be aligned to 8 bytes here
+static_assert(sizeof(struct movie_summary) == 2 * sizeof(int64_t));
 
 [[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
