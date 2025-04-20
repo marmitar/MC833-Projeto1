@@ -12,7 +12,7 @@
  *
  * Used to separate atomic variables from synchronization variables, that are used in different code paths.
  */
-static constexpr const size_t CACHE_LINE_SIZE = 64;
+#define CACHE_LINE_SIZE 64
 
 /** Maximum number of items that can be in the queue at a single time. */
 #define WORK_QUEUE_CAPACITY 128

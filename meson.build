@@ -80,6 +80,15 @@ if warning_level >= 3
         checked: 'off',
     )
 endif
+# Disable some bugprone GCC warnings
+if cc.get_id() == 'gcc'
+    warnings += cc.get_supported_arguments(
+        '-Wno-abi',
+        '-Wno-nonnull-compare',
+        '-Wno-unused-function',
+        checked: 'warn'
+    )
+endif
 
 optimizations = []
 if optimizations_enabled
@@ -130,6 +139,7 @@ endif
 
 linker_options = cc.get_supported_link_arguments(
     optimizations_enabled ? '-Wl,-O1' : [],
+    optimizations_enabled and not get_option('b_pie') ? '-no-pie' : [],
     '-Wl,--gc-sections',
     '-Wl,--sort-common',
     '-Wl,--as-needed',

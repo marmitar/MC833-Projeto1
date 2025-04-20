@@ -13,7 +13,7 @@
 static constexpr const char DATABASE[] = "movies.db";
 
 /** Enforced alignment for `db_conn_t`. */
-static constexpr const size_t DB_CONN_ALIGNMENT = 128;
+#define DB_CONN_ALIGNMENT 128
 
 /** Opaque handle to a database connection. */
 typedef struct database_connection db_conn_t [[gnu::aligned(DB_CONN_ALIGNMENT)]];
@@ -169,7 +169,7 @@ db_result_t db_get_movie(
     message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2), gnu::hot, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2), gnu::hot]]
 /**
  * List all movies from the database and run `callback` on each one.
  *
@@ -180,12 +180,12 @@ db_result_t db_get_movie(
  */
 db_result_t db_list_movies(
     db_conn_t *NONNULL conn,
-    [[gnu::nothrow]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2, 3), gnu::hot, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2, 3), gnu::hot]]
 /**
  * List all movies with a given genre and run `callback` on each one.
  *
@@ -197,12 +197,12 @@ db_result_t db_list_movies(
 db_result_t db_search_movies_by_genre(
     db_conn_t *NONNULL conn,
     const char genre[NONNULL restrict const],
-    [[gnu::nothrow]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2), gnu::hot, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2), gnu::hot]]
 /**
  * List summaries of all movies in the database and run `callback` on each summary.
  *
@@ -213,7 +213,7 @@ db_result_t db_search_movies_by_genre(
  */
 db_result_t db_list_summaries(
     db_conn_t *NONNULL conn,
-    [[gnu::nothrow]] bool callback(void *UNSPECIFIED data, struct movie_summary summary),
+    bool callback(void *UNSPECIFIED data, struct movie_summary summary),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 );

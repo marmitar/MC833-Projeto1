@@ -17,7 +17,7 @@
 #    define NONNULL _Nonnull
 // For completeness.
 #    define UNSPECIFIED _Null_unspecified
-#else
+#else  // GCC
 // These pointer modifiers are specific to Clang, and are left as comments for readers on GCC.
 #    define NULLABLE
 #    define NONNULL
@@ -45,7 +45,14 @@
 /** Recover integer from callback pointer. */
 #define INT_FROM_PTR(p) ((int) (intptr_t) (p))
 
+#if defined(__clang__)
 /** Adds compiler hints. Checked on DEBUG builds. */
-#define assume(condition) ((assert(condition)), __builtin_assume(condition))
+#    define assume(condition) ((assert(condition)), __builtin_assume(condition))
+#else  // GCC
+/** Adds compiler hints. Checked on DEBUG builds. */
+#    define assume(condition) \
+        assert(condition);    \
+        [[gnu::assume(condition)]]
+#endif
 
 #endif  // SRC_DEFINES_H

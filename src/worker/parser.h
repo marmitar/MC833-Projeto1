@@ -26,7 +26,7 @@ enum [[gnu::packed]] operation_ty {
 };
 
 /** Optimal alignment for `struct operation`. */
-static constexpr const size_t OPERATION_STRUCT_ALIGNMENT = 32;
+#define OPERATION_STRUCT_ALIGNMENT 32
 
 /**
  * A parsed operation that either points to a `struct movie` or a movie/genre key.

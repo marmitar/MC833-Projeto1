@@ -83,9 +83,7 @@ enum operation_ty parse_ty(const yaml_char_t *NONNULL key) {
  */
 [[nodiscard("useless call if discarded"), gnu::pure, gnu::nonnull(1)]]
 static size_t list_len(const char *NULLABLE const list[NONNULL]) {
-    if unlikely (list == NULL) {
-        return 0;
-    }
+    assume(list != NULL);
 
     size_t len = 0;
     while (list[len] != NULL) {

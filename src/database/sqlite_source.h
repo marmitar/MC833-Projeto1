@@ -8,10 +8,12 @@
 
 // Includes the full SQLite 3 source code amalgamation for aggressive optimizations.
 // Disable some diagnostic messages from that file, as they are not part of this source code.
-#pragma clang diagnostic push
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunknown-pragmas"
 #pragma clang diagnostic ignored "-Rpass"
 #pragma clang diagnostic ignored "-Rpass-missed"
 #pragma clang diagnostic ignored "-Wpragma-system-header-outside-header"
+#pragma GCC diagnostic ignored "-Wunused-function"
 
 #pragma GCC system_header
 // IWYU pragma: begin_exports
@@ -22,6 +24,6 @@
 #undef likely
 #undef unlikely
 
-#pragma clang diagnostic pop
+#pragma GCC diagnostic pop
 
 #endif  // SRC_DATABASE_SQLITE_SOURCE_H

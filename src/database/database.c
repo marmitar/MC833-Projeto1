@@ -88,7 +88,7 @@ static const char *NONNULL errmsg_vprintf(const char *NONNULL restrict format, v
     }
 }
 
-[[gnu::format(printf, 2, 3), gnu::nonnull(2, 3)]]
+[[gnu::format(printf, 2, 3), gnu::nonnull(2)]]
 /** Builds a formatted error message for expected user errors. */
 static void errmsg_printf(message_t *NULLABLE errmsg, const char *NONNULL restrict format, ...) {
     if likely (errmsg != NULL) {
@@ -203,7 +203,7 @@ bool db_setup(const char filepath[NONNULL restrict], message_t *NULLABLE restric
     return db_close(db, errmsg);
 }
 
-static constexpr const size_t STRING_BUFFER_ALIGNMENT = 32;
+#define STRING_BUFFER_ALIGNMENT 32
 
 /**
  * Internal buffer for string output.
@@ -224,7 +224,7 @@ struct [[gnu::aligned(STRING_BUFFER_ALIGNMENT)]] string_buffer {
 };
 
 /** The step size for each allocation in string_buffer. */
-static constexpr const size_t BUFFER_PAGE_SIZE = 4096;
+#define BUFFER_PAGE_SIZE 4096
 static_assert(BUFFER_PAGE_SIZE > 0, "Invalid page size.");
 
 [[gnu::malloc, gnu::assume_aligned(alignof(struct string_buffer))]]
@@ -235,13 +235,13 @@ static struct string_buffer *NULLABLE string_buffer_alloc(void) {
         return NULL;
     }
 
-    char *data = calloc(BUFFER_PAGE_SIZE, sizeof(char));
+    [[gnu::aligned(BUFFER_PAGE_SIZE)]] char *data = calloc_aligned(BUFFER_PAGE_SIZE, BUFFER_PAGE_SIZE, sizeof(char));
     if unlikely (data == NULL) {
         free(buffer);
         return NULL;
     }
 
-    buffer->data = data;
+    buffer->data = __builtin_assume_aligned(data, BUFFER_PAGE_SIZE);
     buffer->capacity = BUFFER_PAGE_SIZE;
     buffer->in_use = 0;
     return buffer;
@@ -291,11 +291,17 @@ static size_t string_buffer_slice(struct string_buffer *NONNULL b, size_t size) 
     const size_t alloc_pages = ceil_div(final_size, BUFFER_PAGE_SIZE);
     const size_t final_capacity = alloc_pages * BUFFER_PAGE_SIZE;
 
-    char *data = realloc(buffer->data, final_capacity * sizeof(char));
+    [[gnu::aligned(BUFFER_PAGE_SIZE)]] char *data = calloc_aligned(BUFFER_PAGE_SIZE, final_capacity, sizeof(char));
     if unlikely (data == NULL) {
         return SIZE_MAX;
     };
-    buffer->data = data;
+
+    memcpy(
+        __builtin_assume_aligned(data, BUFFER_PAGE_SIZE),
+        __builtin_assume_aligned(buffer->data, BUFFER_PAGE_SIZE),
+        buffer->capacity * BUFFER_PAGE_SIZE
+    );
+    buffer->data = __builtin_assume_aligned(data, BUFFER_PAGE_SIZE);
     buffer->capacity = final_capacity;
     size_t slice = buffer->in_use;
     buffer->in_use += actual_size;
@@ -774,9 +780,7 @@ static db_result_t db_eval_stmt(sqlite3_stmt *NONNULL stmt) {
 [[gnu::pure, gnu::nonnull(1)]]
 /** Calculate the size of a NULL terminated list of strings. */
 static size_t list_len(const char *NULLABLE const list[NONNULL]) {
-    if unlikely (list == NULL) {
-        return 0;
-    }
+    assume(list != NULL);
 
     size_t len = 0;
     while (list[len] != NULL) {

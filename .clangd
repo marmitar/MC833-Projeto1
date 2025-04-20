@@ -4,5 +4,9 @@ CompileFlags:
     - -xc
     - -D_CLANGD=1
     - -D_FORTIFY_SOURCE=1
+  Remove:
+    - -fallow-store-data-races
+    - -fwhole-program
+    - -Wstringop-overflow=4
 Index:
   Background: Build

@@ -22,7 +22,7 @@
 #define hhu(code) ((unsigned char) (code))
 
 /** Response length. */
-static constexpr const size_t RESP_LEN = 1024;
+#define RESP_LEN 1024
 
 [[nodiscard("hard errors cannot be ignored")]]
 /**
@@ -106,7 +106,7 @@ static bool send_summary(void *NONNULL sock_ptr, const struct movie_summary summ
 }
 
 /** Length for an IP text representation. */
-static constexpr const size_t MAX_IP_LEN = 32;
+#define MAX_IP_LEN 32
 
 /** String representation of an IP address. */
 struct [[gnu::aligned(MAX_IP_LEN)]] ip_string {

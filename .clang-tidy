@@ -6,6 +6,7 @@ Checks: '
   performance-*,
   modernize-*,
   -modernize-use-nullptr,
+  -modernize-macro-to-enum,
   bugprone-*,
   cert-*-c,
   concurrency-*,

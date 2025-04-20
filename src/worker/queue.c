@@ -155,10 +155,7 @@ workq_t *NULLABLE workq_create(void) {
 
 /** Deallocates memory for the work queue and destroy its synchronization variables. */
 void workq_destroy(workq_t *NONNULL queue) {
-    if unlikely (queue == NULL) {
-        (void) fprintf(stderr, "workq_destroy: nullptr queue received\n");
-        return;
-    }
+    assume(queue != NULL);
 
     const char *func[] = {"pthread_cond_destroy", "pthread_mutex_destroy"};
     const int rvs[] = {
