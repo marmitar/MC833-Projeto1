@@ -16,7 +16,7 @@
 #include "./parser.h"
 #include "./request.h"
 
-[[nodiscard("hard errors cannot be ignored"), gnu::regcall]]
+[[nodiscard("hard errors cannot be ignored")]]
 /**
  * Sends a debug response to the client based on `db_result` and `errmsg`.
  *
@@ -42,7 +42,7 @@ static bool handle_result(int sock_fd, message_t errmsg, db_result_t result) {
     return unlikely(result == DB_HARD_ERROR);
 }
 
-[[gnu::regcall, gnu::hot]]
+[[gnu::hot]]
 /**
  * Sends textual movie data back to the client.
  *
@@ -81,7 +81,7 @@ static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE m) {
     return false;
 }
 
-[[gnu::regcall, gnu::hot]]
+[[gnu::hot]]
 /**
  * Sends a single-line summary (id + title) of a movie to the client.
  *
@@ -96,7 +96,7 @@ static bool send_summary(void *NONNULL sock_ptr, const struct movie_summary summ
     return false;
 }
 
-[[gnu::regcall, gnu::nonnull(3)]]
+[[gnu::nonnull(3)]]
 /** Writes the client IP in human readable format. */
 static bool get_peer_ip(int sock_fd, socklen_t len, char ip[NONNULL len]) {
     struct sockaddr_in addr = {

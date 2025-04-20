@@ -18,7 +18,7 @@ typedef struct database_connection db_conn_t;
 /** Output error messages, never nullable. */
 typedef const char *NONNULL message_t;
 
-[[nodiscard("cannot use database on false"), gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
+[[nodiscard("cannot use database on false"), gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
  * Create or migrate database at `filepath`.
  *
@@ -30,7 +30,7 @@ typedef const char *NONNULL message_t;
  */
 bool db_setup(const char filepath[NONNULL restrict], message_t *NULLABLE restrict errmsg);
 
-[[gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
  * Frees a dynamically allocated error message string.
  *
@@ -39,7 +39,7 @@ bool db_setup(const char filepath[NONNULL restrict], message_t *NULLABLE restric
  */
 void db_free_errmsg(message_t errmsg);
 
-[[nodiscard("allocated memory must be freed"), gnu::regcall, gnu::malloc, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[nodiscard("allocated memory must be freed"), gnu::malloc, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**
  * Connects to the existing database at `filepath`.
  *
@@ -51,7 +51,7 @@ void db_free_errmsg(message_t errmsg);
  */
 db_conn_t *NULLABLE db_connect(const char filepath[NONNULL restrict], message_t *NULLABLE restrict errmsg);
 
-[[gnu::regcall, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**
  * Closes an open database connection.
  *
@@ -106,7 +106,7 @@ struct movie_summary {
 // even on 32 bit, fields should be aligned to 8 bytes here
 static_assert(sizeof(struct movie_summary) == 2 * sizeof(int64_t));
 
-[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Registers a new movie in the database. Updates the `id` field of `movie` if successful.
  *
@@ -122,7 +122,7 @@ db_result_t db_register_movie(
     message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Adds new genres from a NULL terminated list to an existing movie.
  *
@@ -138,7 +138,7 @@ db_result_t db_add_genres(
     message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Removes a movie from the database.
  *
@@ -147,7 +147,7 @@ db_result_t db_add_genres(
  */
 db_result_t db_delete_movie(db_conn_t *NONNULL conn, int64_t movie_id, message_t *NULLABLE restrict errmsg);
 
-[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Get a movie from the database and write it to `movie`. The caller is reponsible for calling `free` on it.
  *
@@ -161,7 +161,7 @@ db_result_t db_get_movie(
     message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2), gnu::hot, gnu::nothrow]]
 /**
  * List all movies from the database and run `callback` on each one.
  *
@@ -172,12 +172,12 @@ db_result_t db_get_movie(
  */
 db_result_t db_list_movies(
     db_conn_t *NONNULL conn,
-    [[gnu::regcall, gnu::nothrow]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    [[gnu::nothrow]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2, 3), gnu::hot, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2, 3), gnu::hot, gnu::nothrow]]
 /**
  * List all movies with a given genre and run `callback` on each one.
  *
@@ -189,12 +189,12 @@ db_result_t db_list_movies(
 db_result_t db_search_movies_by_genre(
     db_conn_t *NONNULL conn,
     const char genre[NONNULL restrict const],
-    [[gnu::regcall, gnu::nothrow]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    [[gnu::nothrow]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::nothrow]]
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2), gnu::hot, gnu::nothrow]]
 /**
  * List summaries of all movies in the database and run `callback` on each summary.
  *
@@ -205,7 +205,7 @@ db_result_t db_search_movies_by_genre(
  */
 db_result_t db_list_summaries(
     db_conn_t *NONNULL conn,
-    [[gnu::regcall, gnu::nothrow]] bool callback(void *UNSPECIFIED data, struct movie_summary summary),
+    [[gnu::nothrow]] bool callback(void *UNSPECIFIED data, struct movie_summary summary),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 );

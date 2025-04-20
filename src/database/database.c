@@ -103,7 +103,6 @@ void db_free_errmsg(const char *NONNULL errmsg) {
     }
 }
 
-[[gnu::regcall]]
 /**
  * Closes an open SQLite3 database connection, free resources and set `errmsg`, if necessary.
  */
@@ -124,7 +123,7 @@ static bool db_close(sqlite3 *NULLABLE db, message_t *NULLABLE errmsg) {
     return false;
 }
 
-[[gnu::regcall, gnu::malloc, gnu::nonnull(1)]]
+[[gnu::malloc, gnu::nonnull(1)]]
 /**
  * Open a database at `filepath`, either connecting to an existing database or creating a new one whe `create` is true.
  */
@@ -221,7 +220,7 @@ struct [[gnu::aligned(sizeof(size_t))]] string_buffer {
 static const constexpr size_t BUFFER_PAGE_SIZE = 4096;
 static_assert(BUFFER_PAGE_SIZE > 0, "Invalid page size.");
 
-[[gnu::regcall, gnu::malloc, gnu::assume_aligned(alignof(struct string_buffer))]]
+[[gnu::malloc, gnu::assume_aligned(alignof(struct string_buffer))]]
 /** Allocates initial memory for a string buffer. */
 static struct string_buffer *NULLABLE string_buffer_alloc(void) {
     struct string_buffer *b = calloc(1, sizeof(struct string_buffer));
@@ -242,7 +241,7 @@ static struct string_buffer *NULLABLE string_buffer_alloc(void) {
     return buffer;
 }
 
-[[gnu::regcall, gnu::nonnull(1)]]
+[[gnu::nonnull(1)]]
 /** Release memory used for buffer. */
 static void string_buffer_free(struct string_buffer *NONNULL buffer) {
     free(buffer->data);
@@ -256,7 +255,7 @@ static inline size_t ceil_div(size_t a, size_t b) {
     return unlikely(a == 0) ? 0 : 1 + ((a - 1) / b);
 }
 
-[[gnu::regcall, gnu::nonnull(1)]]
+[[gnu::nonnull(1)]]
 /**
  * Request an allocated slice in string buffer.
  *
@@ -297,7 +296,7 @@ static size_t string_buffer_slice(struct string_buffer *NONNULL b, size_t size) 
     return slice;
 }
 
-[[gnu::regcall, gnu::nonnull(1)]]
+[[gnu::nonnull(1)]]
 /** Reset the buffer to no data in use. */
 static inline void string_buffer_reset(struct string_buffer *NONNULL buffer) {
     buffer->in_use = 0;
@@ -341,7 +340,7 @@ struct[[]] database_connection {
     sqlite3_stmt *NONNULL op_select_movies_genre;
 };
 
-[[gnu::regcall, gnu::malloc, gnu::nonnull(1, 3, 4)]]
+[[gnu::malloc, gnu::nonnull(1, 3, 4)]]
 /** Build a SQLite statement for persistent use. Returns NULL on failure. */
 static sqlite3_stmt *NULLABLE db_prepare(
     sqlite3 *NONNULL db,
@@ -373,7 +372,7 @@ static sqlite3_stmt *NULLABLE db_prepare(
     return stmt;
 }
 
-[[gnu::regcall, gnu::nonnull(1)]]
+[[gnu::nonnull(1)]]
 /** Create all used statements beforehand, for faster reuse later. */
 static bool db_prepare_stmts(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     sqlite3 *NONNULL db = conn->db;
@@ -536,7 +535,7 @@ db_conn_t *NULLABLE db_connect(const char filepath[NONNULL restrict], message_t 
     return conn;
 }
 
-[[gnu::regcall, gnu::nonnull(1, 2, 3)]]
+[[gnu::nonnull(1, 2, 3)]]
 /** Closes a prepared statement. Used during disconnect. */
 static void db_finalize(sqlite3 *NONNULL db, sqlite3_stmt *NONNULL stmt, bool *NONNULL ok, message_t *NULLABLE errmsg) {
     int rv = sqlite3_finalize(stmt);
@@ -574,7 +573,7 @@ bool db_disconnect(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     return ok;
 }
 
-[[gnu::regcall, gnu::const]]
+[[gnu::const]]
 /**
  * Translate SQLite3 extended error codes into simpler values.
  *
@@ -708,7 +707,7 @@ static db_result_t check_result(const int rv, const int rrv) {
     }
 }
 
-[[gnu::regcall, gnu::pure, gnu::nonnull(2)]]
+[[gnu::pure, gnu::nonnull(2)]]
 /** Checks a list of return values sequentially. */
 static db_result_t check_results(size_t n, const int rv[NONNULL const n], const int rrv) {
     for (size_t i = 0; i < n; i++) {
@@ -720,7 +719,7 @@ static db_result_t check_results(size_t n, const int rv[NONNULL const n], const 
     return DB_SUCCESS;
 }
 
-[[gnu::regcall, gnu::nonnull(1, 2), gnu::hot]]
+[[gnu::nonnull(1, 2), gnu::hot]]
 /** Runs a single transaction statement and reset it. */
 static db_result_t db_transaction_op(db_conn_t *NONNULL conn, sqlite3_stmt *NONNULL stmt, message_t *NULLABLE errmsg) {
     int rv = sqlite3_step(stmt);
@@ -732,25 +731,25 @@ static db_result_t db_transaction_op(db_conn_t *NONNULL conn, sqlite3_stmt *NONN
     return DB_SUCCESS;
 }
 
-[[gnu::regcall, gnu::nonnull(1), gnu::hot]]
+[[gnu::nonnull(1), gnu::hot]]
 /** Runs `BEGIN TRANSACTION`. */
 static db_result_t db_transaction_begin(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     return db_transaction_op(conn, conn->op_begin, errmsg);
 }
 
-[[gnu::regcall, gnu::nonnull(1)]]
+[[gnu::nonnull(1)]]
 /** Runs `ROLLBACK TRANSACTION`. */
 static db_result_t db_transaction_rollback(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     return db_transaction_op(conn, conn->op_rollback, errmsg);
 }
 
-[[gnu::regcall, gnu::nonnull(1), gnu::hot]]
+[[gnu::nonnull(1), gnu::hot]]
 /** Runs `COMMIT TRANSACTION`. */
 static db_result_t db_transaction_commit(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     return db_transaction_op(conn, conn->op_commit, errmsg);
 }
 
-[[gnu::regcall, gnu::nonnull(1), gnu::hot]]
+[[gnu::nonnull(1), gnu::hot]]
 /** Step through statement, ignoring results. */
 static db_result_t db_eval_stmt(sqlite3_stmt *NONNULL stmt) {
     int rv = SQLITE_OK;
@@ -767,7 +766,7 @@ static db_result_t db_eval_stmt(sqlite3_stmt *NONNULL stmt) {
     return DB_SUCCESS;
 }
 
-[[gnu::regcall, gnu::pure, gnu::nonnull(1)]]
+[[gnu::pure, gnu::nonnull(1)]]
 /** Calculate the size of a NULL terminated list of strings. */
 static size_t list_len(const char *NULLABLE const list[NONNULL]) {
     if unlikely (list == NULL) {
@@ -781,7 +780,7 @@ static size_t list_len(const char *NULLABLE const list[NONNULL]) {
     return len;
 }
 
-[[gnu::regcall, gnu::nonnull(2)]]
+[[gnu::nonnull(2)]]
 /** Runs `op_insert_movie` inside an open transaction. */
 static db_result_t register_movie_in_transaction(const db_conn_t conn, struct movie *NONNULL movie) {
     const size_t genres = list_len(movie->genres);
@@ -868,7 +867,7 @@ db_result_t db_register_movie(
     return db_transaction_commit(conn, errmsg);
 }
 
-[[gnu::regcall, gnu::nonnull(3)]]
+[[gnu::nonnull(3)]]
 /** Runs `op_insert_genre_link` inside an open transaction. */
 static db_result_t add_genres_in_transaction(
     const db_conn_t conn,
@@ -944,7 +943,6 @@ db_result_t db_add_genres(
     return res;
 }
 
-[[gnu::regcall]]
 /** Runs `op_delete_movie` inside its automatic transaction. */
 static db_result_t delete_movie_in_transaction(const db_conn_t conn, int64_t movie_id) {
     int rv = sqlite3_bind_int64(conn.op_delete_movie, 1, movie_id);
@@ -972,7 +970,7 @@ db_result_t db_delete_movie(db_conn_t *NONNULL conn, int64_t movie_id, message_t
     return DB_SUCCESS;
 }
 
-[[gnu::regcall, gnu::nonnull(1, 2)]]
+[[gnu::nonnull(1, 2)]]
 /** Insert column text into `buffer` and return the slice position. */
 static size_t get_column_in_slice(struct string_buffer *NONNULL buffer, sqlite3_stmt *NONNULL stmt, int column) {
     const unsigned char *data = sqlite3_column_text(stmt, column);
@@ -994,7 +992,7 @@ static size_t get_column_in_slice(struct string_buffer *NONNULL buffer, sqlite3_
     return slice;
 }
 
-[[gnu::regcall, gnu::nonnull(1, 2, 3, 4, 5)]]
+[[gnu::nonnull(1, 2, 3, 4, 5)]]
 /** Build movie data into `buffer` and correct pointers to `movie`. */
 static db_result_t get_movie_with_genres(
     struct string_buffer *NONNULL buffer,
@@ -1072,14 +1070,14 @@ static db_result_t get_movie_with_genres(
     return DB_SUCCESS;
 }
 
-[[gnu::regcall, gnu::nonnull(1, 2, 3, 4, 5)]]
+[[gnu::nonnull(1, 2, 3, 4, 5)]]
 /** Iterate over movie entries, calling `callback` on each and returning the final result in `movie`.  */
 static db_result_t iter_movies(
     struct string_buffer *NONNULL buffer,
     sqlite3_stmt *NONNULL outer_stmt,
     sqlite3_stmt *NONNULL inner_stmt,
     struct movie *NONNULL *NONNULL movie,
-    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL summary),
+    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL summary),
     void *NULLABLE callback_data
 ) {
     size_t genres = 0;
@@ -1117,7 +1115,7 @@ static db_result_t iter_movies(
     return DB_SUCCESS;
 }
 
-[[gnu::regcall, gnu::nonnull(1, 2)]]
+[[gnu::nonnull(1, 2)]]
 /** Count each iteration. */
 static bool count_iterations(void *NONNULL counter, [[maybe_unused]] const struct movie *NONNULL movie) {
     unsigned *cnt = (unsigned *) counter;
@@ -1125,7 +1123,7 @@ static bool count_iterations(void *NONNULL counter, [[maybe_unused]] const struc
     return false;
 }
 
-[[gnu::regcall, gnu::nonnull(3)]]
+[[gnu::nonnull(3)]]
 /** Read a single movie and write to `movie`. */
 static db_result_t get_movie_in_transaction(
     const db_conn_t conn,
@@ -1194,11 +1192,11 @@ db_result_t db_get_movie(
     return res;
 }
 
-[[gnu::regcall, gnu::nonnull(2)]]
+[[gnu::nonnull(2)]]
 /** Read all movies and run callback on each. */
 static db_result_t list_movies_in_transaction(
     const db_conn_t conn,
-    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data
 ) {
     struct movie *last_movie = NULL;
@@ -1222,7 +1220,7 @@ static db_result_t list_movies_in_transaction(
 /** List all movies with full information. */
 db_result_t db_list_movies(
     db_conn_t *NONNULL conn,
-    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 ) {
@@ -1245,12 +1243,12 @@ db_result_t db_list_movies(
     return res;
 }
 
-[[gnu::regcall, gnu::nonnull(2)]]
+[[gnu::nonnull(2)]]
 /** Search through movies and run callback on each. */
 static db_result_t search_movies_in_transaction(
     const db_conn_t conn,
     const char genre[NONNULL restrict const],
-    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data
 ) {
     int rv = sqlite3_bind_text(conn.op_select_movies_genre, 1, genre, -1, SQLITE_STATIC);
@@ -1281,7 +1279,7 @@ static db_result_t search_movies_in_transaction(
 db_result_t db_search_movies_by_genre(
     db_conn_t *NONNULL conn,
     const char genre[NONNULL restrict const],
-    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 ) {
@@ -1304,7 +1302,7 @@ db_result_t db_search_movies_by_genre(
     return res;
 }
 
-[[gnu::regcall, gnu::nonnull(1, 2, 3)]]
+[[gnu::nonnull(1, 2, 3)]]
 /** Build summary data using `buffer`. */
 static db_result_t get_summary(
     struct string_buffer *NONNULL buffer,
@@ -1325,11 +1323,11 @@ static db_result_t get_summary(
     return DB_SUCCESS;
 }
 
-[[gnu::regcall, gnu::nonnull(2)]]
+[[gnu::nonnull(2)]]
 /** Read title and id of all movies and run callback on each. */
 static db_result_t list_summaries_in_transaction(
     const db_conn_t conn,
-    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, struct movie_summary summary),
+    bool callback(void *UNSPECIFIED data, struct movie_summary summary),
     void *NULLABLE callback_data
 ) {
 
@@ -1362,7 +1360,7 @@ static db_result_t list_summaries_in_transaction(
 /** List all movies with reduced information. */
 db_result_t db_list_summaries(
     db_conn_t *NONNULL conn,
-    [[gnu::regcall]] bool callback(void *UNSPECIFIED data, struct movie_summary summary),
+    bool callback(void *UNSPECIFIED data, struct movie_summary summary),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 ) {

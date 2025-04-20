@@ -46,7 +46,7 @@ struct operation {
     };
 };
 
-[[nodiscard("uninitialized parser if false"), gnu::regcall, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[nodiscard("uninitialized parser if false"), gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**
  * Initializes a YAML parser to read from the file descriptor `fd`.
  *
@@ -54,7 +54,7 @@ struct operation {
  */
 bool parser_start(yaml_parser_t *NONNULL parser, int sock_fd);
 
-[[nodiscard("allocated memory must be freed"), gnu::regcall, gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
+[[nodiscard("allocated memory must be freed"), gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Reads the next operation from the YAML parser, which may be outside or inside a mapping.
  *

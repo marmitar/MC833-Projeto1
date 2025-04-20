@@ -17,13 +17,13 @@ struct worker_context {
     struct io_uring ring;
 };
 
-[[gnu::regcall, gnu::nonnull(1, 2), gnu::nothrow]]
+[[gnu::nonnull(1, 2), gnu::nothrow]]
 bool start_worker(pthread_t *NONNULL id, struct worker_context *NONNULL ctx);
 
-[[gnu::regcall, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 bool uring_init(struct io_uring *NONNULL ring);
 
-[[gnu::regcall, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 bool post_accept(struct io_uring *NONNULL ring, int server_fd);
 
 #endif

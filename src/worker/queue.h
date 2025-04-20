@@ -21,7 +21,7 @@ typedef struct work_queue workq_t;
  */
 typedef int work_item;
 
-[[nodiscard("might need to destroy queue"), gnu::regcall, gnu::malloc, gnu::cold, gnu::leaf, gnu::nothrow]]
+[[nodiscard("might need to destroy queue"), gnu::malloc, gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
  * Allocate memory for the work queue and initialize its synchronization variables.
  *
@@ -29,7 +29,7 @@ typedef int work_item;
  */
 workq_t *NULLABLE workq_create(void);
 
-[[gnu::regcall, gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
  * Deallocates memory for the work queue and destroy its synchronization variables.
  *
@@ -37,7 +37,7 @@ workq_t *NULLABLE workq_create(void);
  */
 bool workq_destroy(workq_t *NONNULL queue);
 
-[[gnu::regcall, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**
  * Add an item to the queue and signal other threads about it.
  *
@@ -48,7 +48,7 @@ bool workq_destroy(workq_t *NONNULL queue);
  */
 bool workq_push(workq_t *NONNULL queue, work_item item);
 
-[[nodiscard("item will be uninitialized on false"), gnu::regcall, gnu::nonnull(1, 2), gnu::leaf, gnu::nothrow]]
+[[nodiscard("item will be uninitialized on false"), gnu::nonnull(1, 2), gnu::leaf, gnu::nothrow]]
 /**
  * Remove an item from the queue.
  *
@@ -56,7 +56,7 @@ bool workq_push(workq_t *NONNULL queue, work_item item);
  */
 bool workq_pop(workq_t *NONNULL queue, work_item *NONNULL item);
 
-[[gnu::regcall, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**
  * Block current thread until there is an item to be taken in the work queue.
  *

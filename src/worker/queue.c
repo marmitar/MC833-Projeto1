@@ -74,7 +74,7 @@ static_assert(
 // And ensure they don't interfere with outside cache lines.
 static_assert(sizeof(workq_t) % CACHE_LINE_SIZE == 0, "The shared variables should not interfere with outside cache.");
 
-[[nodiscard("mutex unitialized on false"), gnu::regcall, gnu::nonnull(1)]]
+[[nodiscard("mutex unitialized on false"), gnu::nonnull(1)]]
 /** Initialize the mutex with custom attributes. */
 static bool workq_mutex_init(pthread_mutex_t *NONNULL mutex) {
     pthread_mutexattr_t attr;
@@ -108,7 +108,7 @@ static bool workq_mutex_init(pthread_mutex_t *NONNULL mutex) {
     return likely(rv == 0);
 }
 
-[[nodiscard("mutex unitialized on false"), gnu::regcall, gnu::nonnull(1)]]
+[[nodiscard("mutex unitialized on false"), gnu::nonnull(1)]]
 /** Initialize the condition variables with custom attributes. */
 static bool workq_cond_init(pthread_cond_t *NONNULL cond) {
     pthread_condattr_t attr;
@@ -176,7 +176,7 @@ bool workq_destroy(workq_t *NONNULL queue) {
     return likely(rv0 == 0 && rv1 == 0);
 }
 
-[[nodiscard("lock may fail"), gnu::regcall, gnu::nonnull(1)]]
+[[nodiscard("lock may fail"), gnu::nonnull(1)]]
 /**
  * Lock a mutex and ensure consistency if last owner died.
  *
@@ -190,7 +190,7 @@ static bool workq_mutex_lock(workq_t *NONNULL queue) {
     return likely(rv == 0);
 }
 
-[[gnu::regcall, gnu::nonnull(1)]]
+[[gnu::nonnull(1)]]
 /**
  * Signal one worker thread that a new item was added, so it may starting working on that.
  *
@@ -207,7 +207,7 @@ static bool workq_signal_item_added(workq_t *NONNULL queue) {
     return likely(rv0 == 0 && rv1 == 0);
 }
 
-[[nodiscard("useless call if discarded"), gnu::regcall, gnu::const]]
+[[nodiscard("useless call if discarded"), gnu::const]]
 /**
  * Convert `head` and `tail` to valid ring buffer indexes.
  */
@@ -215,7 +215,7 @@ static inline size_t idx(uint_fast64_t ticket) {
     return (size_t) (ticket % WORK_QUEUE_CAPACITY);
 }
 
-[[nodiscard("useless call if discarded"), gnu::regcall, gnu::const]]
+[[nodiscard("useless call if discarded"), gnu::const]]
 static inline int_fast64_t workq_size(uint_fast64_t head, uint_fast64_t tail) {
     const uint_fast64_t diff = tail - head;
     if likely (diff <= INT_FAST64_MAX) {
@@ -304,7 +304,7 @@ bool workq_pop(workq_t *NONNULL queue, work_item *NONNULL item) {
     }
 }
 
-[[nodiscard("useless call if discarded"), gnu::regcall, gnu::pure, gnu::nonnull(1)]]
+[[nodiscard("useless call if discarded"), gnu::pure, gnu::nonnull(1)]]
 /**
  * Check if the list is empty.
  */

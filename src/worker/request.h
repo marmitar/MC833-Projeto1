@@ -7,7 +7,7 @@
 #include "../database/database.h"
 #include "../defines.h"
 
-[[gnu::regcall, gnu::nonnull(2)]]
+[[gnu::nonnull(2)]]
 /**
  * Handles a single client connection on sock_fd, parsing YAML requests and calling the database functions.
  *
