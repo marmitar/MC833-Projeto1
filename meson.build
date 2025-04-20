@@ -30,8 +30,10 @@ add_global_arguments('-D_GNU_SOURCE=1', language: 'c')
 cc = meson.get_compiler('c')
 
 required_headers = [
+    'arpa/inet.h',
     'netinet/in.h',
     'sys/socket.h',
+    'sys/time.h',
     'unistd.h',
 ]
 foreach header : required_headers
@@ -276,7 +278,14 @@ liburing = subproject('liburing',
 # FINAL BINARY  #
 
 executable('main',
-    files('src/main.c', 'src/database/database.c', 'src/worker/parser.c', 'src/worker/request.c', 'src/worker/worker.c'),
+    files(
+        'src/main.c',
+        'src/database/database.c',
+        'src/worker/parser.c',
+        'src/worker/queue.c',
+        'src/worker/request.c',
+        'src/worker/worker.c',
+    ),
     include_directories: include_directories('src/'),
     c_args: warnings + optimizations + general_codegen + debugging + sqlite3_flags,
     link_args: linker_options,
