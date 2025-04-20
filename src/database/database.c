@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../alloc.h"
 #include "../defines.h"
 #include "./database.h"
 #include "./schema.h"
@@ -40,7 +41,7 @@ static const char *NONNULL errmsg_dup(const char *NULLABLE error_message) {
     }
 
     const size_t len = strlen(error_message);
-    char *copy = malloc((len + 1) * sizeof(char));
+    char *copy = calloc(len + 1, sizeof(char));
     if unlikely (copy == NULL) {
         return OUT_OF_MEMORY_ERROR;
     }
@@ -229,13 +230,12 @@ static_assert(BUFFER_PAGE_SIZE > 0, "Invalid page size.");
 [[gnu::malloc, gnu::assume_aligned(alignof(struct string_buffer))]]
 /** Allocates initial memory for a string buffer. */
 static struct string_buffer *NULLABLE string_buffer_alloc(void) {
-    struct string_buffer *b = calloc(1, sizeof(struct string_buffer));
-    if unlikely (b == NULL) {
+    struct string_buffer *buffer = calloc_like(struct string_buffer);
+    if unlikely (buffer == NULL) {
         return NULL;
     }
-    struct string_buffer *NONNULL buffer = get_aligned(struct string_buffer, b);
 
-    char *data = malloc(BUFFER_PAGE_SIZE * sizeof(char));
+    char *data = calloc(BUFFER_PAGE_SIZE, sizeof(char));
     if unlikely (data == NULL) {
         free(buffer);
         return NULL;
@@ -501,12 +501,11 @@ static bool db_prepare_stmts(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg
 
 /** Connects to the existing database at `filepath`. */
 db_conn_t *NULLABLE db_connect(const char filepath[NONNULL restrict], message_t *NULLABLE restrict errmsg) {
-    db_conn_t *c = calloc(1, sizeof(struct database_connection));
-    if unlikely (c == NULL) {
+    db_conn_t *conn = calloc_like(struct database_connection);
+    if unlikely (conn == NULL) {
         errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
         return NULL;
     }
-    db_conn_t *NONNULL conn = get_aligned(struct database_connection, c);
 
     struct string_buffer *text_buffer = string_buffer_alloc();
     if unlikely (text_buffer == NULL) {
@@ -1050,12 +1049,13 @@ static db_result_t get_movie_with_genres(
     }
 
     if (*genre_count < count) {
-        struct movie *m = realloc(*movie, offsetof(struct movie, genres) + (count + 1) * sizeof(char *));
+        struct movie *m = calloc_fam(struct movie, genres, count + 1);
         if unlikely (m == NULL) {
             return DB_RUNTIME_ERROR;
         }
 
-        *movie = get_aligned(struct movie, m);
+        memcpy(m, *movie, size_of_fam(struct movie, genres, count));
+        *movie = m;
         *genre_count = count;
     }
 
@@ -1087,11 +1087,10 @@ static db_result_t iter_movies(
     void *NULLABLE callback_data
 ) {
     size_t genres = 0;
-    struct movie *m = malloc(offsetof(struct movie, genres) + (genres + 1) * sizeof(char *));
-    if unlikely (m == NULL) {
+    struct movie *current_movie = calloc_fam(struct movie, genres, genres + 1);
+    if unlikely (current_movie == NULL) {
         return DB_RUNTIME_ERROR;
     }
-    struct movie *NONNULL current_movie = get_aligned(struct movie, m);
 
     int rv = SQLITE_OK;
     db_result_t res = DB_SUCCESS;

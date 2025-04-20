@@ -7,12 +7,20 @@
 
 #include "../defines.h"
 
+/**
+ * Assumed size for the cache line.
+ *
+ * Used to separate atomic variables from synchronization variables, that are used in different code paths.
+ */
+static constexpr const size_t CACHE_LINE_SIZE = 64;
+
+/** Maximum number of items that can be in the queue at a single time. */
 #define WORK_QUEUE_CAPACITY 128
 
 /**
  * An opaque handle to the concurrent work queue.
  */
-typedef struct work_queue workq_t;
+typedef struct work_queue workq_t [[gnu::aligned(2 * CACHE_LINE_SIZE)]];
 
 /**
  * The content of the work queue.
@@ -21,7 +29,12 @@ typedef struct work_queue workq_t;
  */
 typedef int work_item;
 
-[[nodiscard("might need to destroy queue"), gnu::malloc, gnu::cold, gnu::leaf, gnu::nothrow]]
+[[nodiscard("might need to destroy queue"),
+  gnu::malloc,
+  gnu::assume_aligned(2 * CACHE_LINE_SIZE),
+  gnu::cold,
+  gnu::leaf,
+  gnu::nothrow]]
 /**
  * Allocate memory for the work queue and initialize its synchronization variables.
  *

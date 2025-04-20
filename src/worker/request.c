@@ -12,6 +12,7 @@
 
 #include <yaml.h>
 
+#include "../alloc.h"
 #include "../database/database.h"
 #include "../defines.h"
 #include "./parser.h"

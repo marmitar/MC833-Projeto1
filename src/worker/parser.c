@@ -10,6 +10,7 @@
 
 #include <yaml.h>
 
+#include "../alloc.h"
 #include "../database/database.h"
 #include "../defines.h"
 #include "./parser.h"
@@ -191,7 +192,7 @@ static char *NULLABLE *NULLABLE parse_genre_list(yaml_parser_t *NONNULL parser) 
     constexpr size_t INITIAL_CAPACITY = 8;
 
     size_t capacity = INITIAL_CAPACITY;
-    char *NULLABLE *genres = (char **) malloc(capacity * sizeof(char *));
+    char *NULLABLE *genres = calloc_like(char *, capacity);
     if unlikely (genres == NULL) {
         return NULL;
     }
@@ -220,12 +221,13 @@ static char *NULLABLE *NULLABLE parse_genre_list(yaml_parser_t *NONNULL parser) 
                 // Expand array if needed
                 if unlikely (len >= capacity - 1) {
                     capacity += INITIAL_CAPACITY;
-                    char **ptr = (char **) realloc((void *) genres, capacity * sizeof(char *));
+                    char **ptr = calloc_like(char *, capacity + INITIAL_CAPACITY);
                     if unlikely (ptr == NULL) {
                         yaml_event_delete(&event);
                         parse_fail(NULL, NULL, genres);
                         return NULL;
                     }
+                    memcpy((char *) ptr, (const char *) genres, capacity * sizeof(char *));
                     genres = ptr;
                 }
 
@@ -380,11 +382,10 @@ static struct operation parse_movie(yaml_parser_t *NONNULL parser, enum operatio
                 // try to close the current operation
                 if likely (title != NULL && director != NULL && needs_year && genres != NULL) {
                     size_t len = list_len((const char *const *) genres);
-                    struct movie *m = malloc(offsetof(struct movie, genres) + (len + 1) * sizeof(char *));
-                    if unlikely (m == NULL) {
+                    struct movie *movie = calloc_fam(struct movie, genres, len + 1);
+                    if unlikely (movie == NULL) {
                         return parse_fail(title, director, genres);
                     }
-                    struct movie *NONNULL movie = get_aligned(struct movie, m);
 
                     movie->id = 0;
                     movie->title = title;

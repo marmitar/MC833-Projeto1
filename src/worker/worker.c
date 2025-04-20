@@ -26,7 +26,6 @@ static int workq_pop_or_wait(const pthread_t id, workq_t *NONNULL queue) {
             return sock_fd;
         }
 
-        (void) fprintf(stderr, "thread[%lu]: workq_pop: empty\n", id);
         ok = workq_wait_not_empty(queue);
         if unlikely (!ok) {
             (void) fprintf(stderr, "thread[%lu]: workq_wait_not_empty: failed\n", id);

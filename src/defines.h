@@ -45,13 +45,7 @@
 /** Recover integer from callback pointer. */
 #define INT_FROM_PTR(p) ((int) (intptr_t) (p))
 
-/** Verifies that the pointer is aligned correctly after allocation. */
-#define is_aligned(ty, ptr) (((uintptr_t) (ptr)) % alignof(ty) == 0)
-
 /** Adds compiler hints. Checked on DEBUG builds. */
-#define assume(condition) ((assert(condition)), __builtin_assume((condition)))
-
-/** Assume pointer is aligned to `ty`. Checked on DEBUG builds. */
-#define get_aligned(ty, ptr) __builtin_assume_aligned((assume(is_aligned(ty, ptr)), (ptr)), alignof(ty))
+#define assume(condition) ((assert(condition)), __builtin_assume(condition))
 
 #endif  // SRC_DEFINES_H

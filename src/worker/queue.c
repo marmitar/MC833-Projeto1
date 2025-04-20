@@ -14,6 +14,7 @@
 #include <immintrin.h>
 #include <pthread.h>
 
+#include "../alloc.h"
 #include "../defines.h"
 #include "./queue.h"
 
@@ -21,13 +22,6 @@
 // correctly on the UINT_MAX to 0 boundary.
 static_assert(0 < WORK_QUEUE_CAPACITY && WORK_QUEUE_CAPACITY < UINT_MAX);
 static_assert(UINT_MAX % WORK_QUEUE_CAPACITY == WORK_QUEUE_CAPACITY - 1);
-
-/**
- * Assumed size for the cache line.
- *
- * Used to separate atomic variables from synchronization variables, that are used in different code paths.
- */
-static constexpr const size_t CACHE_LINE_SIZE = 64;
 
 /**
  * The actual work queue.
@@ -136,12 +130,10 @@ static bool workq_cond_init(pthread_cond_t *NONNULL cond) {
 
 /** Allocate memory for the work queue and initialize its synchronization variables. */
 workq_t *NULLABLE workq_create(void) {
-    workq_t *q = aligned_alloc(CACHE_LINE_SIZE, sizeof(struct work_queue));
-    if unlikely (q == NULL) {
+    workq_t *queue = calloc_like(struct work_queue);
+    if unlikely (queue == NULL) {
         return NULL;
     }
-    workq_t *NONNULL queue = get_aligned(workq_t, q);
-    memset(queue, 0, sizeof(struct work_queue));
 
     bool ok = workq_mutex_init(&(queue->item_added_mtx));
     if unlikely (!ok) {

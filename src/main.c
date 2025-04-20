@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include <sys/socket.h>
 
+#include "./alloc.h"
 #include "./database/database.h"
 #include "./defines.h"
 #include "./worker/queue.h"
@@ -75,7 +76,7 @@ extern int main(void) {
     printf("server listening on port %d\n", PORT);
 
     const unsigned n = cpu_count();
-    pthread_t *workers = malloc(n * sizeof(pthread_t));
+    pthread_t *workers = calloc_like(pthread_t, n);
     if unlikely (workers == NULL) {
         perror("malloc");
         close(server_fd);
