@@ -34,19 +34,17 @@ static constexpr const size_t CACHE_LINE_SIZE = 64;
  *
  * Implemented as a ring buffer, using atomics where possible and synchronization locks otherwise.
  */
-struct [[gnu::aligned(CACHE_LINE_SIZE)]] work_queue {
-    /** Slow-path synchronisation, mostly isolated on its own cache line. */
-    alignas(CACHE_LINE_SIZE) struct {
-        /**
-         * Signalled on each push, to wake worker threads.
-         */
-        pthread_cond_t item_added_cond;
-        /**
-         * Guards the `item_added_cond`.
-         */
-        pthread_mutex_t item_added_mtx;
-    } cold;
-    /* Ring storage */
+struct [[gnu::aligned(2 * CACHE_LINE_SIZE)]] work_queue {
+    // Slow-path synchronisation, mostly isolated on its own cache line. ---------------------------------------------
+    /**
+     * Signalled on each push, to wake worker threads.
+     */
+    [[gnu::aligned(CACHE_LINE_SIZE)]] pthread_cond_t item_added_cond;
+    /**
+     * Guards the `item_added_cond`.
+     */
+    [[gnu::aligned(CACHE_LINE_SIZE)]] pthread_mutex_t item_added_mtx;
+    // Ring storage --------------------------------------------------------------------------------------------------
     /**
      * The ring buffer, limited to `WORK_QUEUE_CAPACITY` items of `work_item`.
      *
@@ -145,15 +143,15 @@ workq_t *NULLABLE workq_create(void) {
     workq_t *NONNULL queue = get_aligned(workq_t, q);
     memset(queue, 0, sizeof(struct work_queue));
 
-    bool ok = workq_mutex_init(&(queue->cold.item_added_mtx));
+    bool ok = workq_mutex_init(&(queue->item_added_mtx));
     if unlikely (!ok) {
         free(queue);
         return NULL;
     }
 
-    ok = workq_cond_init(&(queue->cold.item_added_cond));
+    ok = workq_cond_init(&(queue->item_added_cond));
     if unlikely (!ok) {
-        pthread_mutex_destroy(&(queue->cold.item_added_mtx));
+        pthread_mutex_destroy(&(queue->item_added_mtx));
         free(queue);
         return NULL;
     }
@@ -172,8 +170,8 @@ void workq_destroy(workq_t *NONNULL queue) {
 
     const char *func[] = {"pthread_cond_destroy", "pthread_mutex_destroy"};
     const int rvs[] = {
-        pthread_cond_destroy(&(queue->cold.item_added_cond)),
-        pthread_mutex_destroy(&(queue->cold.item_added_mtx)),
+        pthread_cond_destroy(&(queue->item_added_cond)),
+        pthread_mutex_destroy(&(queue->item_added_mtx)),
     };
     memset(queue, 0, sizeof(struct work_queue));
     free(queue);
@@ -198,9 +196,9 @@ void workq_destroy(workq_t *NONNULL queue) {
  * Returns false on errors.
  */
 static bool workq_mutex_lock(workq_t *NONNULL queue) {
-    int rv = pthread_mutex_lock(&(queue->cold.item_added_mtx));
+    int rv = pthread_mutex_lock(&(queue->item_added_mtx));
     if unlikely (rv == EOWNERDEAD) {
-        rv = pthread_mutex_consistent(&(queue->cold.item_added_mtx));
+        rv = pthread_mutex_consistent(&(queue->item_added_mtx));
     }
     return likely(rv == 0);
 }
@@ -217,8 +215,8 @@ static bool workq_signal_item_added(workq_t *NONNULL queue) {
         return false;
     }
 
-    int rv0 = pthread_cond_signal(&(queue->cold.item_added_cond));
-    int rv1 = pthread_mutex_unlock(&(queue->cold.item_added_mtx));
+    int rv0 = pthread_cond_signal(&(queue->item_added_cond));
+    int rv1 = pthread_mutex_unlock(&(queue->item_added_mtx));
     return likely(rv0 == 0 && rv1 == 0);
 }
 
@@ -343,13 +341,13 @@ bool workq_wait_not_empty(workq_t *NONNULL queue) {
 
     int rv0 = 0;
     while (unlikely(is_empty(queue))) {
-        rv0 = pthread_cond_wait(&(queue->cold.item_added_cond), &(queue->cold.item_added_mtx));
+        rv0 = pthread_cond_wait(&(queue->item_added_cond), &(queue->item_added_mtx));
         if unlikely (rv0 != 0) {
             break;
         }
     }
 
     // always unlock the mutex, even if `pthread_cond_wait` failed
-    int rv1 = pthread_mutex_unlock(&(queue->cold.item_added_mtx));
+    int rv1 = pthread_mutex_unlock(&(queue->item_added_mtx));
     return likely(rv0 == 0) && likely(rv1 == 0);
 }

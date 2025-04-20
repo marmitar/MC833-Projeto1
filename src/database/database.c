@@ -202,13 +202,15 @@ bool db_setup(const char filepath[NONNULL restrict], message_t *NULLABLE restric
     return db_close(db, errmsg);
 }
 
+static constexpr const size_t STRING_BUFFER_ALIGNMENT = 32;
+
 /**
  * Internal buffer for string output.
  *
  * Each buffer holds multiple NUL terminated strings. The strings contents are modifiable, but cannot be increased
  * in-place. A new string slice must be re
  */
-struct [[gnu::aligned(sizeof(size_t))]] string_buffer {
+struct [[gnu::aligned(STRING_BUFFER_ALIGNMENT)]] string_buffer {
     /** Current allocated size for `data`. */
     size_t capacity;
     /** Currently in use part of the buffer. */
@@ -309,7 +311,7 @@ static inline void string_buffer_reset(struct string_buffer *NONNULL buffer) {
 /**
  * A connection to the database file, which is a SQLite3 connection with cached statements.
  */
-struct[[]] database_connection {
+struct [[gnu::aligned(DB_CONN_ALIGNMENT)]] database_connection {
     /** The actual connection. */
     sqlite3 *NONNULL db;
     /** Internal buffer for string output. */

@@ -12,8 +12,11 @@
 /** The default database name. */
 static constexpr const char DATABASE[] = "movies.db";
 
+/** Enforced alignment for `db_conn_t`. */
+static constexpr const size_t DB_CONN_ALIGNMENT = 128;
+
 /** Opaque handle to a database connection. */
-typedef struct database_connection db_conn_t;
+typedef struct database_connection db_conn_t [[gnu::aligned(DB_CONN_ALIGNMENT)]];
 
 /** Output error messages, never nullable. */
 typedef const char *NONNULL message_t;
@@ -39,7 +42,12 @@ bool db_setup(const char filepath[NONNULL restrict], message_t *NULLABLE restric
  */
 void db_free_errmsg(message_t errmsg);
 
-[[nodiscard("allocated memory must be freed"), gnu::malloc, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[nodiscard("allocated memory must be freed"),
+  gnu::malloc,
+  gnu::assume_aligned(DB_CONN_ALIGNMENT),
+  gnu::nonnull(1),
+  gnu::leaf,
+  gnu::nothrow]]
 /**
  * Connects to the existing database at `filepath`.
  *
@@ -97,7 +105,7 @@ static_assert(sizeof(struct movie) == offsetof(struct movie, genres));
 /**
  * Short representation of a movie.
  */
-struct movie_summary {
+struct [[gnu::aligned(2 * sizeof(int64_t))]] movie_summary {
     /** Unique identifier for the movie entry in the database. */
     int64_t id;
     /** Embedded movie title. */

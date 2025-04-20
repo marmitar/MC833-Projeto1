@@ -49,10 +49,10 @@ extern int main(void) {
     setsockopt(
         server_fd,
         SOL_SOCKET,
-        SO_RCVTIMEO,
+        SO_RCVTIMEO,  // NOLINT(misc-include-cleaner)
         &SOCKET_TIMEOUT,
         sizeof(SOCKET_TIMEOUT)
-    );  // NOLINT(misc-include-cleaner)
+    );
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
         .sin_port = htons(PORT),

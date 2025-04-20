@@ -107,7 +107,8 @@ static bool send_summary(void *NONNULL sock_ptr, const struct movie_summary summ
 /** Length for an IP text representation. */
 static constexpr const size_t MAX_IP_LEN = 32;
 
-struct ip_string {
+/** String representation of an IP address. */
+struct [[gnu::aligned(MAX_IP_LEN)]] ip_string {
     char ip[MAX_IP_LEN];
 };
 

@@ -3,6 +3,7 @@
 #define SRC_WORKER_PARSER_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <yaml.h>
@@ -24,11 +25,13 @@ enum [[gnu::packed]] operation_ty {
     SEARCH_BY_GENRE = 7,
 };
 
+/** Optimal alignment for `struct operation`. */
+static constexpr const size_t OPERATION_STRUCT_ALIGNMENT = 32;
+
 /**
  * A parsed operation that either points to a `struct movie` or a movie/genre key.
  */
-struct operation {
-    enum operation_ty ty;
+struct [[gnu::aligned(OPERATION_STRUCT_ALIGNMENT)]] operation {
     union {
         /**
          * If `ty` is something that requires a full movie definition (e.g. ADD_MOVIE), this is a pointer to a
@@ -39,11 +42,12 @@ struct operation {
         /**
          * If `ty` is an operation that just needs an ID and/or a genre, store them here in `movie_id` and `genre`.
          */
-        struct movie_key {
+        struct [[gnu::aligned(2 * sizeof(int64_t))]] movie_key {
             int64_t movie_id;
             char *NULLABLE genre;
         } key;
     };
+    enum operation_ty ty;
 };
 
 [[nodiscard("uninitialized parser if false"), gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
