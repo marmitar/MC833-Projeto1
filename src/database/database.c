@@ -69,29 +69,33 @@ static void errmsg_dup_rc(message_t *NULLABLE errmsg, const int rc) {
     errmsg_dup_str(errmsg, sqlite3_errstr(rc));
 }
 
-[[gnu::format(printf, 3, 4), gnu::nonnull(3)]]
+[[gnu::nonnull(1, 2)]]
 /** Builds a formatted error message for expected user errors. */
-static void errmsg_printf(message_t *NULLABLE errmsg, const size_t bufsize, const char *NONNULL restrict format, ...) {
-    if unlikely (errmsg == NULL) {
-        return;
-    }
-
-    char *error_message = malloc(bufsize * sizeof(char));
+static const char *NONNULL errmsg_vprintf(const char *NONNULL restrict format, va_list args) {
+    constexpr size_t BUFSIZE = 128;
+    char *error_message = calloc(BUFSIZE, sizeof(char));
     if unlikely (error_message == NULL) {
-        *errmsg = OUT_OF_MEMORY_ERROR;
-        return;
+        return OUT_OF_MEMORY_ERROR;
     }
 
-    va_list args;
-    va_start(args, format);
-    const int rv = vsnprintf(error_message, bufsize, format, args);
-    va_end(args);
-
+    const int rv = vsnprintf(error_message, BUFSIZE, format, args);
     if likely (rv > 0) {
-        *errmsg = error_message;
+        return error_message;
     } else {
-        *errmsg = UNKNOWN_ERROR;
         free(error_message);
+        return UNKNOWN_ERROR;
+    }
+}
+
+[[gnu::format(printf, 2, 3), gnu::nonnull(2, 3)]]
+/** Builds a formatted error message for expected user errors. */
+static void errmsg_printf(message_t *NULLABLE errmsg, const char *NONNULL restrict format, ...) {
+    if likely (errmsg != NULL) {
+        va_list args;
+        va_start(args);
+        *errmsg = errmsg_vprintf(format, args);
+        va_end(args);
+        return;
     }
 }
 
@@ -217,7 +221,7 @@ struct [[gnu::aligned(sizeof(size_t))]] string_buffer {
 };
 
 /** The step size for each allocation in string_buffer. */
-static const constexpr size_t BUFFER_PAGE_SIZE = 4096;
+static constexpr const size_t BUFFER_PAGE_SIZE = 4096;
 static_assert(BUFFER_PAGE_SIZE > 0, "Invalid page size.");
 
 [[gnu::malloc, gnu::assume_aligned(alignof(struct string_buffer))]]
@@ -929,10 +933,10 @@ db_result_t db_add_genres(
 
     switch (sqlite3_extended_errcode(conn->db)) {
         case SQLITE_CONSTRAINT_FOREIGNKEY:
-            errmsg_printf(errmsg, 128, "no movie with id = %" PRIi64 " found in the database", movie_id);
+            errmsg_printf(errmsg, "no movie with id = %" PRIi64 " found in the database", movie_id);
             break;
         case SQLITE_CONSTRAINT_UNIQUE:
-            errmsg_printf(errmsg, 128, "movie with id = %" PRIi64 " already has the provided genre", movie_id);
+            errmsg_printf(errmsg, "movie with id = %" PRIi64 " already has the provided genre", movie_id);
             break;
         default: {
             errmsg_dup_db(errmsg, conn->db);
@@ -964,7 +968,7 @@ db_result_t db_delete_movie(db_conn_t *NONNULL conn, int64_t movie_id, message_t
     }
 
     if (sqlite3_changes64(conn->db) < 1) {
-        errmsg_printf(errmsg, 128, "no movie with id = %" PRIi64 " to be deleted from the database", movie_id);
+        errmsg_printf(errmsg, "no movie with id = %" PRIi64 " to be deleted from the database", movie_id);
         return DB_USER_ERROR;
     }
     return DB_SUCCESS;
@@ -1178,7 +1182,7 @@ db_result_t db_get_movie(
     } else {
         switch (res) {
             case DB_USER_ERROR:
-                errmsg_printf(errmsg, 128, "no movie with id = %" PRIi64 " found in the database", movie_id);
+                errmsg_printf(errmsg, "no movie with id = %" PRIi64 " found in the database", movie_id);
                 break;
             case DB_RUNTIME_ERROR:
                 errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);

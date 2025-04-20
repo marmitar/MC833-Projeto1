@@ -20,6 +20,9 @@
 /** Display code in %hhu format. */
 #define hhu(code) ((unsigned char) (code))
 
+/** Response length. */
+static constexpr const size_t RESP_LEN = 1024;
+
 [[nodiscard("hard errors cannot be ignored")]]
 /**
  * Sends a debug response to the client based on `db_result` and `errmsg`.
@@ -37,8 +40,8 @@ static bool handle_result(pthread_t id, int sock_fd, message_t errmsg, db_result
     }
 
     if likely (errmsg != NULL) {
-        char response[512];
-        (void) snprintf(response, 512, "server: %s\n", errmsg);
+        char response[RESP_LEN];
+        (void) snprintf(response, sizeof(response), "server: %s\n", errmsg);
         send(sock_fd, response, strlen(response), 0);
         (void) fprintf(stderr, "thread[%lu]: db error: %s\n", id, errmsg);
         db_free_errmsg(errmsg);
@@ -68,18 +71,18 @@ static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE m) {
     // - not clog the SQLite database lock
     // - allow faster communication by the kernel
     // - integrate better into uring
-    char msg[1024] = "movie:\n";
+    char msg[RESP_LEN] = "movie:\n";
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, 1024, "\tid: %" PRIi64 "\n", movie->id);
+    (void) snprintf(msg, sizeof(msg), "\tid: %" PRIi64 "\n", movie->id);
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, 1024, "\ttitle: %s\n", movie->title);
+    (void) snprintf(msg, sizeof(msg), "\ttitle: %s\n", movie->title);
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, 1024, "\treleased in: %d\n", movie->release_year);
+    (void) snprintf(msg, sizeof(msg), "\treleased in: %d\n", movie->release_year);
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, 1024, "\tdirector: %s\n", movie->director);
+    (void) snprintf(msg, sizeof(msg), "\tdirector: %s\n", movie->director);
     send(sock_fd, msg, strlen(msg), 0);
     for (size_t i = 0; movie->genres[i] != NULL; i++) {
-        (void) snprintf(msg, 1024, "\tgenre[%zu]: %s\n", i, movie->genres[i]);
+        (void) snprintf(msg, sizeof(msg), "\tgenre[%zu]: %s\n", i, movie->genres[i]);
         send(sock_fd, msg, strlen(msg), 0);
     }
     send(sock_fd, "\n", strlen("\n"), 0);
@@ -95,15 +98,23 @@ static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE m) {
 static bool send_summary(void *NONNULL sock_ptr, const struct movie_summary summary) {
     const int sock_fd = INT_FROM_PTR(sock_ptr);
 
-    char msg[1024];
-    (void) snprintf(msg, 1024, "movie[id=%" PRIi64 "]: %s\n", summary.id, summary.title);
+    char msg[RESP_LEN];
+    (void) snprintf(msg, sizeof(msg), "movie[id=%" PRIi64 "]: %s\n", summary.id, summary.title);
     send(sock_fd, msg, strlen(msg), 0);
     return false;
 }
 
-[[gnu::nonnull(3)]]
+/** Length for an IP text representation. */
+static constexpr const size_t MAX_IP_LEN = 32;
+
+struct ip_string {
+    char ip[MAX_IP_LEN];
+};
+
 /** Writes the client IP in human readable format. */
-static bool get_peer_ip(int sock_fd, socklen_t len, char ip[NONNULL len]) {
+static struct ip_string get_peer_ip(int sock_fd) {
+    constexpr struct ip_string UNKNOWN = {.ip = "<unknown>"};
+
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
         .sin_port = 0,
@@ -112,17 +123,18 @@ static bool get_peer_ip(int sock_fd, socklen_t len, char ip[NONNULL len]) {
     socklen_t sock_len = sizeof(addr);
 
     int rv = getpeername(sock_fd, &addr, &sock_len);
-    if likely (rv == 0) {
-        const char *p = inet_ntop(AF_INET, &addr, ip, len);
-        if likely (p != NULL) {
-            ip[len - 1] = '\0';
-            return true;
-        }
+    if unlikely (rv != 0) {
+        return UNKNOWN;
     }
 
-    const char unknown[] = "<unknown>";
-    memcpy(ip, unknown, sizeof(unknown));
-    return false;
+    struct ip_string str = {.ip = ""};
+    const char *p = inet_ntop(AF_INET, &addr, str.ip, MAX_IP_LEN);
+    if unlikely (p == NULL) {
+        return UNKNOWN;
+    }
+
+    str.ip[MAX_IP_LEN - 1] = '\0';
+    return str;
 }
 
 /**
@@ -137,10 +149,7 @@ static bool get_peer_ip(int sock_fd, socklen_t len, char ip[NONNULL len]) {
  */
 bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
     const pthread_t id = pthread_self();
-
-    char ip[32] = "";
-    get_peer_ip(sock_fd, 32, ip);
-    (void) fprintf(stderr, "thread[%lu]: handling socket %d, peer ip %s\n", id, sock_fd, ip);
+    (void) fprintf(stderr, "thread[%lu]: handling socket %d, peer ip %s\n", id, sock_fd, get_peer_ip(sock_fd).ip);
 
     yaml_parser_t parser;
     bool ok = parser_start(&parser, sock_fd);
@@ -175,7 +184,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
         db_result_t result = DB_SUCCESS;
         switch (op.ty) {
             case ADD_MOVIE: {
-                char response[256] = "\n";
+                char response[RESP_LEN] = "\n";
                 (void) snprintf(
                     response,
                     sizeof(response),
@@ -197,7 +206,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 break;
             }
             case ADD_GENRE: {
-                char response[128] = "\n";
+                char response[RESP_LEN] = "\n";
                 (void) snprintf(
                     response,
                     sizeof(response),
@@ -213,7 +222,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 break;
             }
             case REMOVE_MOVIE: {
-                char response[128] = "\n";
+                char response[RESP_LEN] = "\n";
                 (void) snprintf(
                     response,
                     sizeof(response),
@@ -228,7 +237,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 break;
             }
             case GET_MOVIE: {
-                char response[128] = "\n";
+                char response[RESP_LEN] = "\n";
                 (void) snprintf(
                     response,
                     sizeof(response),
@@ -246,7 +255,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 break;
             }
             case LIST_MOVIES: {
-                char response[] = "server: received LIST_MOVIES\n";
+                char response[RESP_LEN] = "server: received LIST_MOVIES\n";
                 send(sock_fd, response, strlen(response), 0);
                 (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
@@ -254,7 +263,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 break;
             }
             case SEARCH_BY_GENRE: {
-                char response[128] = "\n";
+                char response[RESP_LEN] = "\n";
                 (void) snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
                 send(sock_fd, response, strlen(response), 0);
                 (void) fprintf(stderr, "thread[%lu]: %s", id, response);
@@ -263,7 +272,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 break;
             }
             case LIST_SUMMARIES: {
-                char response[128] = "\n";
+                char response[RESP_LEN] = "\n";
                 (void) snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
                 send(sock_fd, response, strlen(response), 0);
                 (void) fprintf(stderr, "thread[%lu]: %s", id, response);
@@ -273,7 +282,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
             }
             case INVALID_OP:
             default: {
-                const char response[] = "server: received an unknown operation, stopping communication\n";
+                const char response[RESP_LEN] = "server: received an unknown operation, stopping communication\n";
                 send(sock_fd, response, strlen(response), 0);
                 (void) fprintf(stderr, "thread[%lu]: %s", id, response);
                 stop = true;

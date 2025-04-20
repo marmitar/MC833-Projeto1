@@ -109,7 +109,8 @@ static bool parse_i64(const char *NONNULL str, int64_t *NONNULL out) {
     char *end = NULL;
     errno = 0;
 
-    long long val = strtoll(str, &end, 10);
+    constexpr int AS_DECIMAL = 10;
+    long long val = strtoll(str, &end, AS_DECIMAL);
     if unlikely (errno == ERANGE || val < INT64_MIN || val > INT64_MAX || end == str || *end != '\0') {
         return false;
     }
@@ -187,7 +188,9 @@ static struct operation parse_fail(char *NULLABLE s1, char *NULLABLE s2, char *N
  * Returns a NULL-terminated array of strings on success, or NULL if error.
  */
 static char *NULLABLE *NULLABLE parse_genre_list(yaml_parser_t *NONNULL parser) {
-    size_t capacity = 8;
+    constexpr size_t INITIAL_CAPACITY = 8;
+
+    size_t capacity = INITIAL_CAPACITY;
     char *NULLABLE *genres = (char **) malloc(capacity * sizeof(char *));
     if unlikely (genres == NULL) {
         return NULL;
@@ -216,7 +219,7 @@ static char *NULLABLE *NULLABLE parse_genre_list(yaml_parser_t *NONNULL parser) 
 
                 // Expand array if needed
                 if unlikely (len >= capacity - 1) {
-                    capacity += 8;
+                    capacity += INITIAL_CAPACITY;
                     char **ptr = (char **) realloc((void *) genres, capacity * sizeof(char *));
                     if unlikely (ptr == NULL) {
                         yaml_event_delete(&event);

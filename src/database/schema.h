@@ -1,7 +1,7 @@
 #ifndef SRC_DATABASE_SCHEMA_H
 #define SRC_DATABASE_SCHEMA_H
 
-static const constexpr char SCHEMA[] = {
+static constexpr const char SCHEMA[] = {
 #ifndef _CLANGD
 #    pragma clang diagnostic push
 #    pragma clang diagnostic ignored "-Wexcess-initializers"

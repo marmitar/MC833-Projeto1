@@ -17,6 +17,7 @@
 
 static constexpr const uint16_t PORT = 12'345;
 static constexpr const int BACKLOG = 5;
+static constexpr const struct timeval SOCKET_TIMEOUT = {.tv_sec = 60, .tv_usec = 0};
 
 extern int main(void) {
     // initialize sqlite
@@ -44,9 +45,14 @@ extern int main(void) {
     }
 
     int yes = 1;
-    struct timeval tv = {.tv_sec = 60, .tv_usec = 0};
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));  // NOLINT(misc-include-cleaner)
-    setsockopt(server_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));     // NOLINT(misc-include-cleaner)
+    setsockopt(
+        server_fd,
+        SOL_SOCKET,
+        SO_RCVTIMEO,
+        &SOCKET_TIMEOUT,
+        sizeof(SOCKET_TIMEOUT)
+    );  // NOLINT(misc-include-cleaner)
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
         .sin_port = htons(PORT),

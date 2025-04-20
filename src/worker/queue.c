@@ -27,7 +27,7 @@ static_assert(UINT_MAX % WORK_QUEUE_CAPACITY == WORK_QUEUE_CAPACITY - 1);
  *
  * Used to separate atomic variables from synchronization variables, that are used in different code paths.
  */
-static const constexpr size_t CACHE_LINE_SIZE = 64;
+static constexpr const size_t CACHE_LINE_SIZE = 64;
 
 /**
  * The actual work queue.

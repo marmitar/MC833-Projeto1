@@ -12,6 +12,6 @@
 unsigned cpu_count(void);
 
 [[gnu::nonnull(1, 2), gnu::nothrow]]
-bool start_worker(pthread_t *NONNULL id, workq_t *NONNULL ctx);
+bool start_worker(pthread_t *NONNULL id, workq_t *NONNULL queue);
 
 #endif
