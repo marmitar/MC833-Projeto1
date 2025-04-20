@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include <arpa/inet.h>
+#include <bits/pthreadtypes.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <sys/socket.h>
@@ -131,9 +132,11 @@ static bool get_peer_ip(int sock_fd, socklen_t len, char ip[NONNULL len]) {
  * @return true if a hard error was encountered (server might stop), false otherwise.
  */
 bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
+    const pthread_t id = pthread_self();
+
     char ip[32] = "";
     get_peer_ip(sock_fd, 32, ip);
-    fprintf(stderr, "thread[%lu]: handling socket %d, peer ip %s\n", pthread_self(), sock_fd, ip);
+    fprintf(stderr, "thread[%lu]: handling socket %d, peer ip %s\n", id, sock_fd, ip);
 
     yaml_parser_t parser;
     bool ok = parser_start(&parser, sock_fd);
@@ -170,7 +173,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                     op.movie->director
                 );
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", response);
+                fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_register_movie(db, op.movie, &errmsg);
                 for (size_t i = 0; op.movie->genres[i] != NULL; i++) {
@@ -191,7 +194,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                     op.key.movie_id
                 );
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", response);
+                fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_add_genres(db, op.key.movie_id, (const char *[2]) {op.key.genre, NULL}, &errmsg);
                 free(op.key.genre);
@@ -206,7 +209,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                     op.key.movie_id
                 );
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", response);
+                fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_delete_movie(db, op.key.movie_id, &errmsg);
                 free(op.key.genre);
@@ -216,7 +219,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 char response[128];
                 snprintf(response, sizeof(response), "server: received GET_MOVIE: id[%" PRIi64 "]\n", op.key.movie_id);
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", response);
+                fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 struct movie *movie = NULL;
                 result = db_get_movie(db, op.key.movie_id, &movie, &errmsg);
@@ -228,7 +231,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
             case LIST_MOVIES: {
                 char response[] = "server: received LIST_MOVIES\n";
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", response);
+                fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_list_movies(db, send_movie, PTR_FROM_INT(sock_fd), &errmsg);
                 break;
@@ -237,7 +240,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 char response[128];
                 snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", response);
+                fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_search_movies_by_genre(db, op.key.genre, send_movie, PTR_FROM_INT(sock_fd), &errmsg);
                 break;
@@ -246,7 +249,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 char response[128];
                 snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", response);
+                fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_list_summaries(db, send_summary, PTR_FROM_INT(sock_fd), &errmsg);
                 break;
@@ -255,13 +258,15 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
             default: {
                 const char response[] = "server: received an unknown operation, stopping communication\n";
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", response);
+                fprintf(stderr, "thread[%lu]: %s", id, response);
                 stop = true;
                 break;
             }
         }
 
         hard_fail = handle_result(sock_fd, errmsg, result);
+        fprintf(stderr, "thread[%lu]: op.ty=%hhu, hard_fail=%hhu, result=%hhu, errmsg=%s\n",
+            id, (unsigned char) op.ty, (unsigned char) hard_fail, (unsigned char) result, errmsg);
     }
 
     yaml_parser_delete(&parser);

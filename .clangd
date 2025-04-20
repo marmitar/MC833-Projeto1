@@ -3,5 +3,6 @@ CompileFlags:
   Add:
     - -xc
     - -D_CLANGD=1
+    - -D_FORTIFY_SOURCE=1
 Index:
   Background: Build

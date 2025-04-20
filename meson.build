@@ -49,10 +49,12 @@ if warning_level >= 1
     warnings += cc.get_supported_arguments(
         '-Wconversion',
         '-Wsign-conversion',
+        '-Wformat',
         '-Wformat=2',
         '-Wformat-signedness',
         cc.get_supported_arguments('-Wformat-truncation=2').get(0, '-Wformat-truncation'),
         cc.get_supported_arguments('-Wformat-overflow=2').get(0, '-Wformat-overflow'),
+        '-Wformat-pedantic',
         checked: 'warn',
     ) + cc.get_supported_arguments(
         '-Wstringop-overflow=4', # GCC only
@@ -106,7 +108,8 @@ general_codegen = cc.get_supported_arguments(
     '-pipe',
     '-fvisibility=hidden',
     debugging_enabled ? '-fstrict-overflow' : '-fno-strict-overflow',
-    '-D_FORTIFY_SOURCE=@0@'.format(debugging_enabled ? 3 : 1),
+    # _FORTIFY_SOURCE=2+ breaks static analysis on some stdlib functions
+    '-D_FORTIFY_SOURCE=@0@'.format(debugging_enabled and cc.get_id() == 'gcc' ? 3 : 1),
     checked: 'warn',
 )
 
