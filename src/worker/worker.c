@@ -3,31 +3,48 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <bits/pthreadtypes.h>
 #include <pthread.h>
 #include <unistd.h>
 
-#include <liburing.h>
-
 #include "../database/database.h"
 #include "../defines.h"
+#include "./queue.h"
 #include "./request.h"
 #include "./worker.h"
 
-/** Maximum number of queued events for io_uring. */
-static constexpr const size_t IORING_QUEUE_DEPTH = 64;
-
+[[gnu::nonnull(2)]]
 /**
- * @brief Thread function that processes completions (and possibly enqueues new requests) from the io_uring.
+ * Simple pop then wait loop, until a value is taken.
+ */
+static int workq_pop_or_wait(const pthread_t id, workq_t *NONNULL queue) {
+    while (true) {
+        int sock_fd = 0;
+        bool ok = workq_pop(queue, &sock_fd);
+        if likely (ok) {
+            assume(sock_fd > 0);
+            return sock_fd;
+        }
+
+        fprintf(stderr, "thread[%lu]: workq_pop: empty\n", id);
+        ok = workq_wait_not_empty(queue);
+        if unlikely (!ok) {
+            fprintf(stderr, "thread[%lu]: workq_wait_not_empty: failed\n", id);
+            return -1;
+        }
+    }
+}
+
+[[gnu::nonnull(1)]]
+/**
+ * Thread function that processes completions from the work queue.
  *
- * Each worker thread calls io_uring_wait_cqe() to block for completions. Once a CQE is received, the thread
- * dispatches the result (e.g. handle_request for a new accept, or read).
- *
- * @param arg pointer to the io_uring
- * @return NULL always
+ * @param arg pointer to the queue
+ * @returns a pointer with the exit code.
  */
 static void *NULLABLE worker_thread(void *NONNULL arg) {
     const pthread_t id = pthread_self();
-    struct worker_context *ctx = (struct worker_context *) arg;
+    workq_t *NONNULL queue = (workq_t *) arg;
 
     const char *errmsg = NULL;
     db_conn_t *db = db_connect(DATABASE, &errmsg);
@@ -37,35 +54,18 @@ static void *NULLABLE worker_thread(void *NONNULL arg) {
         return PTR_FROM_INT(3);
     }
 
-    bool stop = false;
-    while (!stop) {
-        int rv = pthread_mutex_lock(&(ctx->mutex));
-        if unlikely (rv != 0) {
-            stop = true;
-            continue;
-        }
-
-        struct io_uring_cqe *cqe = NULL;
-        rv = io_uring_wait_cqe(&(ctx->ring), &cqe);
-        if unlikely (rv < 0) {
-            pthread_mutex_unlock(&(ctx->mutex));
-            fprintf(stderr, "thread[%lu]: io_uring_wait_cqe: %s\n", id, strerror(-rv));
-            continue;
-        }
-
-        const int sock_fd = cqe->res;
+    while (true) {
+        const int sock_fd = workq_pop_or_wait(id, queue);
         if unlikely (sock_fd < 0) {
-            fprintf(stderr, "thread[%lu]: io_uring op failed: %s\n", id, strerror(-sock_fd));
-            io_uring_cqe_seen(&(ctx->ring), cqe);
-            pthread_mutex_unlock(&(ctx->mutex));
-            continue;
+            break;
         }
-        io_uring_cqe_seen(&(ctx->ring), cqe);
-        pthread_mutex_unlock(&(ctx->mutex));
 
         // This blocks the worker while we parse & respond, which might not be truly async.
         // For a fully async approach, you'd queue further read/write requests.
-        stop = handle_request(sock_fd, db);
+        bool ok = handle_request(sock_fd, db);
+        if unlikely (!ok) {
+            break;
+        }
     }
 
     fprintf(stderr, "thread[%lu]: full stop required\n", id);
@@ -95,36 +95,6 @@ unsigned cpu_count(void) {
 /**
  * Start a worker thread.
  */
-bool start_worker(pthread_t *NONNULL id, struct worker_context *NONNULL ctx) {
-    return pthread_create(id, NULL, worker_thread, ctx) == 0;
-}
-
-/**
- * Set up the IOUring.
- */
-bool uring_init(struct io_uring *NONNULL ring) {
-    struct io_uring_params params;
-    memset(&params, 0, sizeof(params));
-
-    int rv = io_uring_queue_init_params(IORING_QUEUE_DEPTH, ring, &params);
-    if unlikely (rv < 0) {
-        fprintf(stderr, "thread[%lu] io_uring_queue_init: %s\n", pthread_self(), strerror(-rv));
-        return false;
-    }
-    return true;
-}
-
-/**
- * Posts an async accept request into the ring.
- */
-bool post_accept(struct io_uring *NONNULL ring, int server_fd) {
-    struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
-    if (sqe == NULL) {
-        fprintf(stderr, "thread[%lu]: post_accept: no sqe available\n", pthread_self());
-        return false;
-    }
-
-    io_uring_prep_accept(sqe, server_fd, NULL, NULL, 0);
-    io_uring_sqe_set_data(sqe, PTR_FROM_INT(server_fd));
-    return true;
+bool start_worker(pthread_t *NONNULL id, workq_t *NONNULL queue) {
+    return pthread_create(id, NULL, worker_thread, queue) == 0;
 }

@@ -121,7 +121,7 @@ static bool workq_cond_init(pthread_cond_t *NONNULL cond) {
         // Single process only.
         pthread_condattr_setpshared(&attr, PTHREAD_PROCESS_PRIVATE),
         // Use low resolution (1 ms to 10 ms) clock.
-        pthread_condattr_setclock(&attr, CLOCK_MONOTONIC_COARSE),
+        pthread_condattr_setclock(&attr, CLOCK_MONOTONIC),
     };
     for (size_t i = 0; i < sizeof(rvs) / sizeof(int); i++) {
         if unlikely (rvs[i] != 0) {

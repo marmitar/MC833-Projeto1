@@ -267,13 +267,6 @@ libyaml = subproject('libyaml',
     .get_variable('yaml_dep') \
     .as_system('system')
 
-liburing = subproject('liburing',
-        required: true,
-        version: ['>=2.5', '<3.0'],
-    ) \
-    .get_variable('uring') \
-    .as_system('system')
-
 # # # # # # # # #
 # FINAL BINARY  #
 
@@ -291,5 +284,5 @@ executable('main',
     link_args: linker_options,
     gnu_symbol_visibility: 'hidden',
     export_dynamic: false,
-    dependencies: [sqlite3, libyaml, threads, liburing],
+    dependencies: [sqlite3, libyaml, threads],
 )

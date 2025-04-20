@@ -4,15 +4,15 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <bits/types/struct_timeval.h>
+#include <bits/pthreadtypes.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <sys/socket.h>
-#include <sys/time.h>
-
-#include <liburing.h>
 
 #include "./database/database.h"
 #include "./defines.h"
+#include "./worker/queue.h"
 #include "./worker/worker.h"
 
 static constexpr const uint16_t PORT = 12'345;
@@ -29,13 +29,9 @@ extern int main(void) {
     }
 
     // initialize io_uring
-    struct worker_context *ctx = calloc(1, sizeof(struct worker_context));
-    bool ok = uring_init(&(ctx->ring));
-    if unlikely (!ok) {
-        return EXIT_FAILURE;
-    }
-    int rv = pthread_mutex_init(&(ctx->mutex), NULL);
-    if unlikely (rv != 0) {
+    workq_t *queue = workq_create();
+    if unlikely (!queue) {
+        fprintf(stderr, "workq_create: out of memory\n");
         return EXIT_FAILURE;
     }
 
@@ -43,7 +39,7 @@ extern int main(void) {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if unlikely (server_fd < 0) {
         perror("socket");
-        pthread_mutex_destroy(&(ctx->mutex));
+        workq_destroy(queue);
         return EXIT_FAILURE;
     }
 
@@ -60,56 +56,59 @@ extern int main(void) {
     if unlikely (bind(server_fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
         perror("bind");
         close(server_fd);
-        pthread_mutex_destroy(&(ctx->mutex));
+        workq_destroy(queue);
         return EXIT_FAILURE;
     }
     if unlikely (listen(server_fd, BACKLOG) < 0) {
         perror("listen");
         close(server_fd);
-        pthread_mutex_destroy(&(ctx->mutex));
+        workq_destroy(queue);
         return EXIT_FAILURE;
     }
 
     printf("server listening on port %d\n", PORT);
-    if likely (post_accept(&(ctx->ring), server_fd)) {
-        io_uring_submit(&(ctx->ring));
-    }
 
     const unsigned n = cpu_count();
     pthread_t *workers = malloc(n * sizeof(pthread_t));
     if unlikely (workers == NULL) {
         perror("malloc");
         close(server_fd);
-        pthread_mutex_destroy(&(ctx->mutex));
+        workq_destroy(queue);
         return EXIT_FAILURE;
-        ;
     }
 
     for (unsigned i = 0; i < n; i++) {
-        bool ok = start_worker(&(workers[i]), ctx);
+        bool ok = start_worker(&(workers[i]), queue);
         if unlikely (!ok) {
-            workers[i] = 0;
+            workers[i] = pthread_self();
         }
     }
 
     // start accepting
     while (true) {
-        rv = pthread_mutex_lock(&(ctx->mutex));
-        if unlikely (rv != 0) {
+        struct sockaddr_in client_addr;
+        socklen_t addrlen = sizeof(client_addr);
+        int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &addrlen);
+        if unlikely (client_fd < 0) {
+            continue;
+        }
+
+        bool ok = workq_push(queue, client_fd);
+        if unlikely (!ok) {
+            close(client_fd);
+            fprintf(stderr, "workq_push: full, stopping the server\n");
             break;
         }
-        if likely (post_accept(&(ctx->ring), server_fd)) {
-            io_uring_submit(&(ctx->ring));
-        }
-        pthread_mutex_unlock(&(ctx->mutex));
-
-        sleep(1);
     }
 
     for (unsigned i = 0; i < n; i++) {
-        pthread_join(workers[i], NULL);
+        if likely (workers[i] != pthread_self()) {
+            // FIXME: signal the workers
+            pthread_join(workers[i], NULL);
+        }
     }
-    pthread_mutex_destroy(&(ctx->mutex));
+
     close(server_fd);
+    workq_destroy(queue);
     return EXIT_SUCCESS;
 }
