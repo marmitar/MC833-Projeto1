@@ -17,6 +17,9 @@
 #include "./parser.h"
 #include "./request.h"
 
+/** Display code in %hhu format. */
+#define hhu(code) ((unsigned char) (code))
+
 [[nodiscard("hard errors cannot be ignored")]]
 /**
  * Sends a debug response to the client based on `db_result` and `errmsg`.
@@ -26,7 +29,7 @@
  *
  * @return true if DB_HARD_ERROR was encountered, false otherwise.
  */
-static bool handle_result(int sock_fd, message_t errmsg, db_result_t result) {
+static bool handle_result(pthread_t id, int sock_fd, message_t errmsg, db_result_t result) {
     if likely (result == DB_SUCCESS) {
         char ok[] = "server: ok\n";
         send(sock_fd, ok, strlen(ok), 0);
@@ -37,6 +40,7 @@ static bool handle_result(int sock_fd, message_t errmsg, db_result_t result) {
         char response[512];
         (void) snprintf(response, 512, "server: %s\n", errmsg);
         send(sock_fd, response, strlen(response), 0);
+        (void) fprintf(stderr, "thread[%lu]: db error: %s\n", id, errmsg);
         db_free_errmsg(errmsg);
     }
 
@@ -122,14 +126,14 @@ static bool get_peer_ip(int sock_fd, socklen_t len, char ip[NONNULL len]) {
 }
 
 /**
- * @brief Main function to handle all YAML-based requests on a single client socket.
+ * Main function to handle all YAML-based requests on a single client socket.
  *
  * Uses parser_start() to read YAML operations, dispatches to appropriate db_* calls,
  * and sends textual responses. Closes the socket at the end.
  *
  * @param sock_fd The socket file descriptor for this client.
  * @param db      A non-null pointer to the database connection.
- * @return true if a hard error was encountered (server might stop), false otherwise.
+ * @return true if request was handled successfully, or false if a hard error was encountered (server might stop).
  */
 bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
     const pthread_t id = pthread_self();
@@ -156,6 +160,14 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
         if (op.ty == INVALID_OP) {
             // end or parse error => just stop
             stop = true;
+            (void) fprintf(
+                stderr,
+                "thread[%lu]: op.ty=%hhu, stop=%hhu, hard_fail=%hhu\n",
+                id,
+                hhu(op.ty),
+                hhu(stop),
+                hhu(hard_fail)
+            );
             continue;
         }
 
@@ -269,19 +281,19 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
             }
         }
 
-        hard_fail = handle_result(sock_fd, errmsg, result);
+        hard_fail = handle_result(id, sock_fd, errmsg, result);
         (void) fprintf(
             stderr,
-            "thread[%lu]: op.ty=%hhu, hard_fail=%hhu, result=%hhu, errmsg=%s\n",
+            "thread[%lu]: op.ty=%hhu, stop=%hhu, hard_fail=%hhu, result=%hhu\n",
             id,
-            (unsigned char) op.ty,
-            (unsigned char) hard_fail,
-            (unsigned char) result,
-            errmsg
+            hhu(op.ty),
+            hhu(stop),
+            hhu(hard_fail),
+            hhu(result)
         );
     }
 
     yaml_parser_delete(&parser);
     close(sock_fd);
-    return hard_fail;
+    return !hard_fail;
 }
