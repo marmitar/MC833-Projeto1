@@ -26,10 +26,10 @@ static int workq_pop_or_wait(const pthread_t id, workq_t *NONNULL queue) {
             return sock_fd;
         }
 
-        fprintf(stderr, "thread[%lu]: workq_pop: empty\n", id);
+        (void) fprintf(stderr, "thread[%lu]: workq_pop: empty\n", id);
         ok = workq_wait_not_empty(queue);
         if unlikely (!ok) {
-            fprintf(stderr, "thread[%lu]: workq_wait_not_empty: failed\n", id);
+            (void) fprintf(stderr, "thread[%lu]: workq_wait_not_empty: failed\n", id);
             return -1;
         }
     }
@@ -49,7 +49,7 @@ static void *NULLABLE worker_thread(void *NONNULL arg) {
     const char *errmsg = NULL;
     db_conn_t *db = db_connect(DATABASE, &errmsg);
     if unlikely (db == NULL) {
-        fprintf(stderr, "thread[%lu]: db_connect error: %s\n", id, errmsg);
+        (void) fprintf(stderr, "thread[%lu]: db_connect error: %s\n", id, errmsg);
         db_free_errmsg(errmsg);
         return PTR_FROM_INT(3);
     }
@@ -68,10 +68,10 @@ static void *NULLABLE worker_thread(void *NONNULL arg) {
         }
     }
 
-    fprintf(stderr, "thread[%lu]: full stop required\n", id);
+    (void) fprintf(stderr, "thread[%lu]: full stop required\n", id);
     bool ok = db_disconnect(db, &errmsg);
     if unlikely (!ok) {
-        fprintf(stderr, "thread[%lu]: db_disconnect error: %s\n", id, errmsg);
+        (void) fprintf(stderr, "thread[%lu]: db_disconnect error: %s\n", id, errmsg);
         return PTR_FROM_INT(2);
     }
 

@@ -35,7 +35,7 @@ static bool handle_result(int sock_fd, message_t errmsg, db_result_t result) {
 
     if likely (errmsg != NULL) {
         char response[512];
-        snprintf(response, 512, "server: %s\n", errmsg);
+        (void) snprintf(response, 512, "server: %s\n", errmsg);
         send(sock_fd, response, strlen(response), 0);
         db_free_errmsg(errmsg);
     }
@@ -66,16 +66,16 @@ static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE m) {
     // - integrate better into uring
     char msg[1024] = "movie:\n";
     send(sock_fd, msg, strlen(msg), 0);
-    snprintf(msg, 1024, "\tid: %" PRIi64 "\n", movie->id);
+    (void) snprintf(msg, 1024, "\tid: %" PRIi64 "\n", movie->id);
     send(sock_fd, msg, strlen(msg), 0);
-    snprintf(msg, 1024, "\ttitle: %s\n", movie->title);
+    (void) snprintf(msg, 1024, "\ttitle: %s\n", movie->title);
     send(sock_fd, msg, strlen(msg), 0);
-    snprintf(msg, 1024, "\treleased in: %d\n", movie->release_year);
+    (void) snprintf(msg, 1024, "\treleased in: %d\n", movie->release_year);
     send(sock_fd, msg, strlen(msg), 0);
-    snprintf(msg, 1024, "\tdirector: %s\n", movie->director);
+    (void) snprintf(msg, 1024, "\tdirector: %s\n", movie->director);
     send(sock_fd, msg, strlen(msg), 0);
     for (size_t i = 0; movie->genres[i] != NULL; i++) {
-        snprintf(msg, 1024, "\tgenre[%zu]: %s\n", i, movie->genres[i]);
+        (void) snprintf(msg, 1024, "\tgenre[%zu]: %s\n", i, movie->genres[i]);
         send(sock_fd, msg, strlen(msg), 0);
     }
     send(sock_fd, "\n", strlen("\n"), 0);
@@ -92,7 +92,7 @@ static bool send_summary(void *NONNULL sock_ptr, const struct movie_summary summ
     const int sock_fd = INT_FROM_PTR(sock_ptr);
 
     char msg[1024];
-    snprintf(msg, 1024, "movie[id=%" PRIi64 "]: %s\n", summary.id, summary.title);
+    (void) snprintf(msg, 1024, "movie[id=%" PRIi64 "]: %s\n", summary.id, summary.title);
     send(sock_fd, msg, strlen(msg), 0);
     return false;
 }
@@ -136,7 +136,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
 
     char ip[32] = "";
     get_peer_ip(sock_fd, 32, ip);
-    fprintf(stderr, "thread[%lu]: handling socket %d, peer ip %s\n", id, sock_fd, ip);
+    (void) fprintf(stderr, "thread[%lu]: handling socket %d, peer ip %s\n", id, sock_fd, ip);
 
     yaml_parser_t parser;
     bool ok = parser_start(&parser, sock_fd);
@@ -163,8 +163,8 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
         db_result_t result = DB_SUCCESS;
         switch (op.ty) {
             case ADD_MOVIE: {
-                char response[256];
-                snprintf(
+                char response[256] = "\n";
+                (void) snprintf(
                     response,
                     sizeof(response),
                     "server: received ADD_MOVIE: %s (%d), by %s\n",
@@ -173,7 +173,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                     op.movie->director
                 );
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", id, response);
+                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_register_movie(db, op.movie, &errmsg);
                 for (size_t i = 0; op.movie->genres[i] != NULL; i++) {
@@ -185,8 +185,8 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 break;
             }
             case ADD_GENRE: {
-                char response[128];
-                snprintf(
+                char response[128] = "\n";
+                (void) snprintf(
                     response,
                     sizeof(response),
                     "server: received ADD_GENRE: %s TO id[%" PRIi64 "]\n",
@@ -194,32 +194,37 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                     op.key.movie_id
                 );
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", id, response);
+                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_add_genres(db, op.key.movie_id, (const char *[2]) {op.key.genre, NULL}, &errmsg);
                 free(op.key.genre);
                 break;
             }
             case REMOVE_MOVIE: {
-                char response[128];
-                snprintf(
+                char response[128] = "\n";
+                (void) snprintf(
                     response,
                     sizeof(response),
                     "server: received REMOVE_MOVIE: id[%" PRIi64 "]\n",
                     op.key.movie_id
                 );
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", id, response);
+                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_delete_movie(db, op.key.movie_id, &errmsg);
                 free(op.key.genre);
                 break;
             }
             case GET_MOVIE: {
-                char response[128];
-                snprintf(response, sizeof(response), "server: received GET_MOVIE: id[%" PRIi64 "]\n", op.key.movie_id);
+                char response[128] = "\n";
+                (void) snprintf(
+                    response,
+                    sizeof(response),
+                    "server: received GET_MOVIE: id[%" PRIi64 "]\n",
+                    op.key.movie_id
+                );
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", id, response);
+                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 struct movie *movie = NULL;
                 result = db_get_movie(db, op.key.movie_id, &movie, &errmsg);
@@ -231,25 +236,25 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
             case LIST_MOVIES: {
                 char response[] = "server: received LIST_MOVIES\n";
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", id, response);
+                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_list_movies(db, send_movie, PTR_FROM_INT(sock_fd), &errmsg);
                 break;
             }
             case SEARCH_BY_GENRE: {
-                char response[128];
-                snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
+                char response[128] = "\n";
+                (void) snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", id, response);
+                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_search_movies_by_genre(db, op.key.genre, send_movie, PTR_FROM_INT(sock_fd), &errmsg);
                 break;
             }
             case LIST_SUMMARIES: {
-                char response[128];
-                snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
+                char response[128] = "\n";
+                (void) snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", id, response);
+                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_list_summaries(db, send_summary, PTR_FROM_INT(sock_fd), &errmsg);
                 break;
@@ -258,15 +263,22 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
             default: {
                 const char response[] = "server: received an unknown operation, stopping communication\n";
                 send(sock_fd, response, strlen(response), 0);
-                fprintf(stderr, "thread[%lu]: %s", id, response);
+                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
                 stop = true;
                 break;
             }
         }
 
         hard_fail = handle_result(sock_fd, errmsg, result);
-        fprintf(stderr, "thread[%lu]: op.ty=%hhu, hard_fail=%hhu, result=%hhu, errmsg=%s\n",
-            id, (unsigned char) op.ty, (unsigned char) hard_fail, (unsigned char) result, errmsg);
+        (void) fprintf(
+            stderr,
+            "thread[%lu]: op.ty=%hhu, hard_fail=%hhu, result=%hhu, errmsg=%s\n",
+            id,
+            (unsigned char) op.ty,
+            (unsigned char) hard_fail,
+            (unsigned char) result,
+            errmsg
+        );
     }
 
     yaml_parser_delete(&parser);

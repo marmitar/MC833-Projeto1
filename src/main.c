@@ -4,8 +4,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <bits/types/struct_timeval.h>
 #include <bits/pthreadtypes.h>
+#include <bits/types/struct_timeval.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <sys/socket.h>
@@ -23,7 +23,7 @@ extern int main(void) {
     const char *errmsg = NULL;
     bool setup_ok = db_setup(DATABASE, &errmsg);
     if unlikely (!setup_ok) {
-        fprintf(stderr, "db_setup: %s\n", errmsg);
+        (void) fprintf(stderr, "db_setup: %s\n", errmsg);
         db_free_errmsg(errmsg);
         return EXIT_FAILURE;
     }
@@ -31,7 +31,7 @@ extern int main(void) {
     // initialize io_uring
     workq_t *queue = workq_create();
     if unlikely (!queue) {
-        fprintf(stderr, "workq_create: out of memory\n");
+        (void) fprintf(stderr, "workq_create: out of memory\n");
         return EXIT_FAILURE;
     }
 
@@ -96,7 +96,7 @@ extern int main(void) {
         bool ok = workq_push(queue, client_fd);
         if unlikely (!ok) {
             close(client_fd);
-            fprintf(stderr, "workq_push: full, stopping the server\n");
+            (void) fprintf(stderr, "workq_push: full, stopping the server\n");
             break;
         }
     }

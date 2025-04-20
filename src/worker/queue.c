@@ -5,6 +5,7 @@
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -163,17 +164,31 @@ workq_t *NULLABLE workq_create(void) {
 }
 
 /** Deallocates memory for the work queue and destroy its synchronization variables. */
-bool workq_destroy(workq_t *NONNULL queue) {
+void workq_destroy(workq_t *NONNULL queue) {
     if unlikely (queue == NULL) {
-        return false;
+        (void) fprintf(stderr, "workq_destroy: nullptr queue received\n");
+        return;
     }
 
-    int rv0 = pthread_cond_destroy(&(queue->cold.item_added_cond));
-    int rv1 = pthread_mutex_destroy(&(queue->cold.item_added_mtx));
+    const char *func[] = {"pthread_cond_destroy", "pthread_mutex_destroy"};
+    const int rvs[] = {
+        pthread_cond_destroy(&(queue->cold.item_added_cond)),
+        pthread_mutex_destroy(&(queue->cold.item_added_mtx)),
+    };
     memset(queue, 0, sizeof(struct work_queue));
     free(queue);
 
-    return likely(rv0 == 0 && rv1 == 0);
+    for (size_t i = 0; i < sizeof(rvs) / sizeof(int); i++) {
+        if unlikely (rvs[i] != 0) {
+            (void) fprintf(
+                stderr,
+                "workq_destroy: %s failed: %s (%s)\n",
+                func[i],
+                strerrordesc_np(rvs[i]),
+                strerrorname_np(rvs[i])
+            );
+        }
+    }
 }
 
 [[nodiscard("lock may fail"), gnu::nonnull(1)]]

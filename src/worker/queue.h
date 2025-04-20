@@ -35,7 +35,7 @@ workq_t *NULLABLE workq_create(void);
  *
  * Returns `true` if destruction was successful, or `false` if the synchronization variables are still in use.
  */
-bool workq_destroy(workq_t *NONNULL queue);
+void workq_destroy(workq_t *NONNULL queue);
 
 [[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**

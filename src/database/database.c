@@ -147,7 +147,7 @@ static sqlite3 *NULLABLE
 static void db_shutdown(void) {
     int rv = sqlite3_shutdown();
     if unlikely (rv != SQLITE_OK) {
-        fprintf(stderr, "sqlite3_shutdown failed: %s\n", sqlite3_errstr(rv));
+        (void) fprintf(stderr, "sqlite3_shutdown failed: %s\n", sqlite3_errstr(rv));
     }
 }
 
