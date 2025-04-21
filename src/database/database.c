@@ -42,13 +42,13 @@ static const char *NONNULL errmsg_dup(const char *NULLABLE error_message) {
         return UNKNOWN_ERROR;
     }
 
-    const size_t len = strlen(error_message);
-    char *copy = calloc(len + 1, sizeof(char));
+    const size_t size = strlen(error_message) + 1;
+    char *copy = malloc(size * sizeof(char));
     if unlikely (copy == NULL) {
         return OUT_OF_MEMORY_ERROR;
     }
 
-    memcpy(copy, error_message, len * sizeof(char));
+    memcpy(copy, error_message, size * sizeof(char));
     return copy;
 }
 
@@ -76,7 +76,7 @@ static void errmsg_dup_rc(message_t *NULLABLE errmsg, const int rc) {
 /** Builds a formatted error message for expected user errors. */
 static const char *NONNULL errmsg_vprintf(const char *NONNULL restrict format, va_list args) {
     constexpr size_t BUFSIZE = 128;
-    char *error_message = calloc(BUFSIZE, sizeof(char));
+    char *error_message = malloc(BUFSIZE * sizeof(char));
     if unlikely (error_message == NULL) {
         return OUT_OF_MEMORY_ERROR;
     }
@@ -398,7 +398,7 @@ static bool db_prepare_stmts(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg
 
 /** Connects to the existing database at `filepath`. */
 db_conn_t *NULLABLE db_connect(const char filepath[NONNULL restrict], message_t *NULLABLE restrict errmsg) {
-    db_conn_t *conn = calloc_like(struct database_connection);
+    db_conn_t *conn = alloc_like(struct database_connection);
     if unlikely (conn == NULL) {
         errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
         return NULL;
@@ -700,16 +700,17 @@ static db_result_t register_movie_in_transaction(const db_conn_t conn, struct mo
     }
 
     // add movie itself to db
-    int rvv[3] = {SQLITE_OK, SQLITE_OK, SQLITE_OK};
-    rvv[0] = sqlite3_bind_text(conn.op_insert_movie, 1, movie->title, -1, SQLITE_STATIC);
-    rvv[1] = sqlite3_bind_text(conn.op_insert_movie, 2, movie->director, -1, SQLITE_STATIC);
-    rvv[2] = sqlite3_bind_int(conn.op_insert_movie, 3, movie->release_year);
+    const int rvv[3] = {
+        sqlite3_bind_text(conn.op_insert_movie, 1, movie->title, -1, SQLITE_STATIC),
+        sqlite3_bind_text(conn.op_insert_movie, 2, movie->director, -1, SQLITE_STATIC),
+        sqlite3_bind_int(conn.op_insert_movie, 3, movie->release_year),
+    };
     if unlikely (rvv[0] != SQLITE_OK || rvv[1] != SQLITE_OK || rvv[2] != SQLITE_OK) {
         sqlite3_clear_bindings(conn.op_insert_movie);
         return check_results(3, rvv, sqlite3_reset(conn.op_insert_movie));
     }
 
-    int rv = SQLITE_OK;
+    int rv;
     unsigned id_set = 0;
     while ((rv = sqlite3_step(conn.op_insert_movie)) == SQLITE_ROW) {
         movie->id = sqlite3_column_int64(conn.op_insert_movie, 0);
@@ -726,9 +727,10 @@ static db_result_t register_movie_in_transaction(const db_conn_t conn, struct mo
 
     // link movie to the genres
     for (size_t i = 0; i < genres; i++) {
-        int rvv[2] = {SQLITE_OK, SQLITE_OK};
-        rvv[0] = sqlite3_bind_int64(conn.op_insert_genre_link, 1, movie->id);
-        rvv[1] = sqlite3_bind_text(conn.op_insert_genre_link, 2, movie->genres[i], -1, SQLITE_STATIC);
+        const int rvv[2] = {
+            sqlite3_bind_int64(conn.op_insert_genre_link, 1, movie->id),
+            sqlite3_bind_text(conn.op_insert_genre_link, 2, movie->genres[i], -1, SQLITE_STATIC),
+        };
         if unlikely (rvv[0] != SQLITE_OK || rvv[1] != SQLITE_OK) {
             sqlite3_clear_bindings(conn.op_insert_genre_link);
             return check_results(2, rvv, sqlite3_reset(conn.op_insert_genre_link));
@@ -789,11 +791,13 @@ static db_result_t add_genres_in_transaction(
     }
 
     for (size_t i = 0; i < len; i++) {
-        int rv1 = sqlite3_bind_int64(conn.op_insert_genre_link, 1, movie_id);
-        int rv2 = sqlite3_bind_text(conn.op_insert_genre_link, 2, genres[i], -1, SQLITE_STATIC);
-        if unlikely (rv1 != SQLITE_OK || rv2 != SQLITE_OK) {
+        const int rvv[2] = {
+            sqlite3_bind_int64(conn.op_insert_genre_link, 1, movie_id),
+            sqlite3_bind_text(conn.op_insert_genre_link, 2, genres[i], -1, SQLITE_STATIC),
+        };
+        if unlikely (rvv[0] != SQLITE_OK || rvv[1] != SQLITE_OK) {
             sqlite3_clear_bindings(conn.op_insert_genre_link);
-            return check_results(2, (int[2]) {rv1, rv2}, sqlite3_reset(conn.op_insert_genre_link));
+            return check_results(2, rvv, sqlite3_reset(conn.op_insert_genre_link));
         }
 
         db_result_t res = db_eval_stmt(conn.op_insert_genre_link);

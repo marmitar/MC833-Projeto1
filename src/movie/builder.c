@@ -85,18 +85,18 @@ struct [[gnu::aligned(ALIGNMENT_MOVIE_BUILDER)]] movie_builder {
 
 /** Allocates initial memory for the reusable movie builder. */
 movie_builder_t *NULLABLE movie_builder_create(void) {
-    movie_builder_t *builder = calloc_like(struct movie_builder);
+    movie_builder_t *builder = alloc_like(struct movie_builder);
     if unlikely (builder == NULL) {
         return NULL;
     }
 
-    [[gnu::aligned(BUFFER_PAGE_SIZE)]] char *data = calloc_aligned(BUFFER_PAGE_SIZE, BUFFER_PAGE_SIZE, sizeof(char));
+    [[gnu::aligned(BUFFER_PAGE_SIZE)]] char *data = alloc_aligned(BUFFER_PAGE_SIZE, BUFFER_PAGE_SIZE, sizeof(char));
     if unlikely (data == NULL) {
         free(builder);
         return NULL;
     }
 
-    struct movie_ref *list = calloc_like(struct movie_ref, MOVIE_LIST_CAPACITY_STEP);
+    struct movie_ref *list = alloc_like(struct movie_ref, MOVIE_LIST_CAPACITY_STEP);
     if unlikely (list == NULL) {
         free(data);
         free(builder);
@@ -161,7 +161,7 @@ static bool movie_builder_realloc_str_data(movie_builder_t *NONNULL b, size_t ad
     assume(final_size > builder->str_in_use);
     const size_t final_capacity = ceil_div(final_size, BUFFER_PAGE_SIZE) * BUFFER_PAGE_SIZE;
 
-    [[gnu::aligned(BUFFER_PAGE_SIZE)]] char *data = calloc_aligned(BUFFER_PAGE_SIZE, final_capacity, sizeof(char));
+    [[gnu::aligned(BUFFER_PAGE_SIZE)]] char *data = alloc_aligned(BUFFER_PAGE_SIZE, final_capacity, sizeof(char));
     if unlikely (data == NULL) {
         return false;
     };
@@ -349,7 +349,7 @@ bool movie_builder_take_current_movie(movie_builder_t *NONNULL builder, struct m
     assume(builder->has_release_year);
     assume(builder->has_genres);
 
-    struct movie *movie = calloc_fam(struct movie, genres, builder->current.genres_count + 1);
+    struct movie *movie = alloc_fam(struct movie, genres, builder->current.genres_count + 1);
     if unlikely (movie == NULL) {
         return false;
     }

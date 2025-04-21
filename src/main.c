@@ -76,7 +76,7 @@ extern int main(void) {
     printf("server listening on port %d\n", PORT);
 
     const unsigned n = cpu_count();
-    pthread_t *workers = calloc_like(pthread_t, n);
+    pthread_t *workers = alloc_like(pthread_t, n);
     if unlikely (workers == NULL) {
         perror("malloc");
         close(server_fd);

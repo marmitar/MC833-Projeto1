@@ -19,7 +19,7 @@
  */
 static int workq_pop_or_wait(const pthread_t id, workq_t *NONNULL queue) {
     while (true) {
-        int sock_fd = 0;
+        int sock_fd;
         bool ok = workq_pop(queue, &sock_fd);
         if likely (ok) {
             assume(sock_fd > 0);

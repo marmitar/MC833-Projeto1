@@ -184,7 +184,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
         }
 
         const char *errmsg = NULL;
-        db_result_t result = DB_SUCCESS;
+        db_result_t result;
         switch (op.ty) {
             case ADD_MOVIE: {
                 char response[RESP_LEN] = "\n";
@@ -288,6 +288,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 const char response[RESP_LEN] = "server: received an unknown operation, stopping communication\n";
                 send(sock_fd, response, strlen(response), 0);
                 (void) fprintf(stderr, "thread[%lu]: %s", id, response);
+                result = DB_SUCCESS;
                 stop = true;
                 break;
             }

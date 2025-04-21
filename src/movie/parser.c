@@ -105,7 +105,7 @@ static bool parse_i64(const char *NONNULL str, int64_t *NONNULL out) {
         return false;
     }
 
-    char *end = NULL;
+    char *end;
     errno = 0;
 
     constexpr int AS_DECIMAL = 10;
@@ -190,7 +190,7 @@ static char *NULLABLE *NULLABLE parse_genre_list(yaml_parser_t *NONNULL parser) 
     constexpr size_t INITIAL_CAPACITY = 8;
 
     size_t capacity = INITIAL_CAPACITY;
-    char *NULLABLE *genres = calloc_like(char *, capacity);
+    char *NULLABLE *genres = alloc_like(char *, capacity);
     if unlikely (genres == NULL) {
         return NULL;
     }
@@ -219,7 +219,7 @@ static char *NULLABLE *NULLABLE parse_genre_list(yaml_parser_t *NONNULL parser) 
                 // Expand array if needed
                 if unlikely (len >= capacity - 1) {
                     capacity += INITIAL_CAPACITY;
-                    char **ptr = calloc_like(char *, capacity + INITIAL_CAPACITY);
+                    char **ptr = alloc_like(char *, capacity + INITIAL_CAPACITY);
                     if unlikely (ptr == NULL) {
                         yaml_event_delete(&event);
                         parse_fail(NULL, NULL, genres);
@@ -380,7 +380,7 @@ static struct operation parse_movie(yaml_parser_t *NONNULL parser, enum operatio
                 // try to close the current operation
                 if likely (title != NULL && director != NULL && !needs_year && genres != NULL) {
                     size_t len = list_len((const char *const *) genres);
-                    struct movie *movie = calloc_fam(struct movie, genres, len + 1);
+                    struct movie *movie = alloc_fam(struct movie, genres, len + 1);
                     if unlikely (movie == NULL) {
                         return parse_fail(title, director, genres);
                     }

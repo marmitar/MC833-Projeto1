@@ -130,7 +130,7 @@ static bool workq_cond_init(pthread_cond_t *NONNULL cond) {
 
 /** Allocate memory for the work queue and initialize its synchronization variables. */
 workq_t *NULLABLE workq_create(void) {
-    workq_t *queue = calloc_like(struct work_queue);
+    workq_t *queue = alloc_like(struct work_queue);
     if unlikely (queue == NULL) {
         return NULL;
     }
