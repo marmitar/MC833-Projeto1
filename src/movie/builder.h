@@ -104,7 +104,7 @@ bool movie_builder_add_genre(movie_builder_t *NONNULL builder, size_t len, const
  *
  * Returns `true` on success and `false` on allocation failures.
  */
-bool movie_builder_take_current_movie(movie_builder_t *NONNULL builder, struct movie *NONNULL *NONNULL output);
+bool movie_builder_take_current_movie(movie_builder_t *NONNULL builder, struct movie *NONNULL output);
 
 [[gnu::nonnull(1, 2), gnu::leaf, gnu::nothrow]]
 /**
@@ -116,7 +116,7 @@ bool movie_builder_take_current_movie(movie_builder_t *NONNULL builder, struct m
  */
 void movie_builder_take_current_summary(movie_builder_t *NONNULL builder, struct movie_summary *NONNULL output);
 
-[[gnu::nonnull(1), gnu::malloc, gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1, 2), gnu::malloc, gnu::leaf, gnu::nothrow]]
 /**
  * Dereference the genre list of the current movie.
  *
@@ -124,7 +124,8 @@ void movie_builder_take_current_summary(movie_builder_t *NONNULL builder, struct
  *
  * Returns the NULL-terminated list of genres on success, and `NULL` on allocation failures.
  */
-const char *NULLABLE *NULLABLE movie_builder_take_current_genres(movie_builder_t *NONNULL builder);
+const char *NONNULL *NULLABLE
+    movie_builder_take_current_genres(movie_builder_t *NONNULL builder, size_t *NONNULL length);
 
 // movie_builder_add_current_movie_to_list
 // movie_builder_add_current_summary_to_list

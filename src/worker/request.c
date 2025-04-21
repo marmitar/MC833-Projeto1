@@ -13,7 +13,6 @@
 
 #include <yaml.h>
 
-#include "../alloc.h"
 #include "../database/database.h"
 #include "../defines.h"
 #include "../movie/movie.h"
@@ -60,15 +59,8 @@ static bool handle_result(pthread_t id, int sock_fd, message_t errmsg, db_result
  * Formats the fields of `movie` and writes them to the socket. Continues returning false so iteration can keep going,
  * unless you want to stop after the first record.
  */
-static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE m) {
+static bool send_movie(void *NONNULL sock_ptr, struct movie movie) {
     const int sock_fd = INT_FROM_PTR(sock_ptr);
-    const struct movie *NONNULL movie = aligned_like(struct movie, m);
-
-    if unlikely (movie == NULL) {
-        char msg[] = "server: null\n";
-        send(sock_fd, msg, strlen(msg), 0);
-        return false;
-    }
 
     // Ideally, we should be a single in-memory buffer and send a single data to the client, as to
     // - not clog the SQLite database lock
@@ -76,16 +68,16 @@ static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE m) {
     // - integrate better into uring
     char msg[RESP_LEN] = "movie:\n";
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, sizeof(msg), "\tid: %" PRIi64 "\n", movie->id);
+    (void) snprintf(msg, sizeof(msg), "\tid: %" PRIi64 "\n", movie.id);
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, sizeof(msg), "\ttitle: %s\n", movie->title);
+    (void) snprintf(msg, sizeof(msg), "\ttitle: %s\n", movie.title);
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, sizeof(msg), "\treleased in: %d\n", movie->release_year);
+    (void) snprintf(msg, sizeof(msg), "\treleased in: %d\n", movie.release_year);
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, sizeof(msg), "\tdirector: %s\n", movie->director);
+    (void) snprintf(msg, sizeof(msg), "\tdirector: %s\n", movie.director);
     send(sock_fd, msg, strlen(msg), 0);
-    for (size_t i = 0; movie->genres[i] != NULL; i++) {
-        (void) snprintf(msg, sizeof(msg), "\tgenre[%zu]: %s\n", i, movie->genres[i]);
+    for (size_t i = 0; i < movie.genre_count; i++) {
+        (void) snprintf(msg, sizeof(msg), "\tgenre[%zu]: %s\n", i, movie.genres[i]);
         send(sock_fd, msg, strlen(msg), 0);
     }
     send(sock_fd, "\n", strlen("\n"), 0);
@@ -193,20 +185,15 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                     response,
                     sizeof(response),
                     "server: received ADD_MOVIE: %s (%d), by %s\n",
-                    op.movie->title,
-                    op.movie->release_year,
-                    op.movie->director
+                    op.movie.title,
+                    op.movie.release_year,
+                    op.movie.director
                 );
                 send(sock_fd, response, strlen(response), 0);
                 (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
-                result = db_register_movie(db, op.movie, &errmsg);
-                for (size_t i = 0; op.movie->genres[i] != NULL; i++) {
-                    free((char *) op.movie->genres[i]);
-                }
-                free((char *) op.movie->title);
-                free((char *) op.movie->director);
-                free(op.movie);
+                result = db_register_movie(db, &(op.movie), &errmsg);
+                free_movie_and_strings(op.movie);
                 break;
             }
             case ADD_GENRE: {
@@ -251,11 +238,11 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 send(sock_fd, response, strlen(response), 0);
                 (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
-                struct movie *movie = NULL;
+                struct movie movie;
                 result = db_get_movie(db, op.key.movie_id, &movie, &errmsg);
 
                 send_movie(PTR_FROM_INT(sock_fd), movie);
-                free(movie);
+                free_movie(movie);
                 break;
             }
             case LIST_MOVIES: {

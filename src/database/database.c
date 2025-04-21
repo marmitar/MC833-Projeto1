@@ -671,22 +671,10 @@ static db_result_t db_eval_stmt(sqlite3_stmt *NONNULL stmt) {
     return DB_SUCCESS;
 }
 
-[[gnu::pure, gnu::nonnull(1)]]
-/** Calculate the size of a NULL terminated list of strings. */
-static size_t list_len(const char *NULLABLE const list[NONNULL]) {
-    assume(list != NULL);
-
-    size_t len = 0;
-    while (list[len] != NULL) {
-        len++;
-    }
-    return len;
-}
-
 [[gnu::nonnull(2)]]
 /** Runs `op_insert_movie` inside an open transaction. */
 static db_result_t register_movie_in_transaction(const db_conn_t conn, struct movie *NONNULL movie) {
-    const size_t genres = list_len(movie->genres);
+    const size_t genres = movie->genre_count;
 
     // add all movie genres to db
     for (size_t i = 0; i < genres; i++) {
@@ -811,6 +799,18 @@ static db_result_t add_genres_in_transaction(
     return DB_SUCCESS;
 }
 
+[[gnu::pure, gnu::nonnull(1)]]
+/** Calculate the size of a NULL terminated list of strings. */
+static size_t list_len(const char *NULLABLE const list[NONNULL]) {
+    assume(list != NULL);
+
+    size_t len = 0;
+    while (list[len] != NULL) {
+        len++;
+    }
+    return len;
+}
+
 /** Adds a list of genres tp an existing movie. */
 db_result_t db_add_genres(
     db_conn_t *NONNULL conn,
@@ -903,7 +903,7 @@ static db_result_t get_movie_with_genres(
     movie_builder_t *NONNULL builder,
     sqlite3_stmt *NONNULL outer_stmt,
     sqlite3_stmt *NONNULL inner_stmt,
-    struct movie *NONNULL *NONNULL movie
+    struct movie *NONNULL movie
 ) {
     size_t title_len;
     size_t director_len;
@@ -955,23 +955,25 @@ static db_result_t get_movie_with_genres(
     return likely(ok) ? DB_SUCCESS : DB_RUNTIME_ERROR;
 }
 
-[[gnu::nonnull(1, 2, 3, 4, 5)]]
+[[gnu::nonnull(1, 2, 3, 5)]]
 /** Iterate over movie entries, calling `callback` on each and returning the final result in `movie`.  */
 static db_result_t iter_movies(
     movie_builder_t *NONNULL buffer,
     sqlite3_stmt *NONNULL outer_stmt,
     sqlite3_stmt *NONNULL inner_stmt,
-    struct movie *NONNULL *NONNULL movie,
-    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL summary),
+    struct movie *NULLABLE last_movie,
+    bool callback(void *UNSPECIFIED data, struct movie summary),
     void *NULLABLE callback_data
 ) {
-    struct movie *current_movie = NULL;
+    bool has_last_movie = false;
+    struct movie current_movie;
 
     int rv;
     db_result_t res;
     while ((rv = sqlite3_step(outer_stmt)) == SQLITE_ROW) {
-        if likely (current_movie != NULL) {
-            free(current_movie);
+        if likely (has_last_movie) {
+            free_movie(current_movie);
+            has_last_movie = false;
         }
 
         res = get_movie_with_genres(buffer, outer_stmt, inner_stmt, &current_movie);
@@ -980,6 +982,7 @@ static db_result_t iter_movies(
         }
 
         bool stop = callback(callback_data, current_movie);
+        has_last_movie = true;
         if (stop) {
             break;
         }
@@ -988,20 +991,30 @@ static db_result_t iter_movies(
     sqlite3_clear_bindings(outer_stmt);
     int rrv = sqlite3_reset(outer_stmt);
     if unlikely ((rv != SQLITE_DONE && rv != SQLITE_ROW) || rrv != SQLITE_OK) {
-        free(current_movie);
+        if (has_last_movie) {
+            free_movie(current_movie);
+        }
         return check_result(rv, rrv);
     } else if unlikely (res != DB_SUCCESS) {
-        free(current_movie);
+        if (has_last_movie) {
+            free_movie(current_movie);
+        }
         return res;
     }
 
-    *movie = current_movie;
+    if (has_last_movie) {
+        if (last_movie != NULL) {
+            *last_movie = current_movie;
+        } else {
+            free_movie(current_movie);
+        }
+    }
     return DB_SUCCESS;
 }
 
-[[gnu::nonnull(1, 2)]]
+[[gnu::nonnull(1)]]
 /** Count each iteration. */
-static bool count_iterations(void *NONNULL counter, [[maybe_unused]] const struct movie *NONNULL movie) {
+static bool count_iterations(void *NONNULL counter, [[maybe_unused]] const struct movie movie) {
     unsigned *cnt = (unsigned *) counter;
     (*cnt) += 1;
     return false;
@@ -1009,11 +1022,7 @@ static bool count_iterations(void *NONNULL counter, [[maybe_unused]] const struc
 
 [[gnu::nonnull(3)]]
 /** Read a single movie and write to `movie`. */
-static db_result_t get_movie_in_transaction(
-    const db_conn_t conn,
-    int64_t movie_id,
-    struct movie *NONNULL *NONNULL movie
-) {
+static db_result_t get_movie_in_transaction(const db_conn_t conn, int64_t movie_id, struct movie *NONNULL movie) {
     int rv = sqlite3_bind_int64(conn.op_select_movie, 1, movie_id);
     if unlikely (rv != SQLITE_OK) {
         sqlite3_clear_bindings(conn.op_select_movie);
@@ -1034,7 +1043,7 @@ static db_result_t get_movie_in_transaction(
 db_result_t db_get_movie(
     db_conn_t *NONNULL conn,
     int64_t movie_id,
-    struct movie *NONNULL *NONNULL movie,
+    struct movie *NONNULL movie,
     message_t *NULLABLE restrict errmsg
 ) {
     db_result_t res = db_transaction_begin(conn, errmsg);
@@ -1046,7 +1055,7 @@ db_result_t db_get_movie(
     if likely (res == DB_SUCCESS) {
         res = db_transaction_commit(conn, errmsg);
         if unlikely (res != DB_SUCCESS) {
-            free(*movie);
+            free_movie(*movie);
         }
         return res;
     }
@@ -1074,15 +1083,14 @@ db_result_t db_get_movie(
 /** Read all movies and run callback on each. */
 static db_result_t list_movies_in_transaction(
     const db_conn_t conn,
-    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, struct movie movie),
     void *NULLABLE callback_data
 ) {
-    struct movie *last_movie;
     const db_result_t res = iter_movies(
         conn.builder,
         conn.op_select_all_movies,
         conn.op_select_movie_genres,
-        &last_movie,
+        NULL,
         callback,
         callback_data
     );
@@ -1091,14 +1099,13 @@ static db_result_t list_movies_in_transaction(
         return res;
     }
 
-    free(last_movie);
     return DB_SUCCESS;
 }
 
 /** List all movies with full information. */
 db_result_t db_list_movies(
     db_conn_t *NONNULL conn,
-    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, struct movie movie),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 ) {
@@ -1126,7 +1133,7 @@ db_result_t db_list_movies(
 static db_result_t search_movies_in_transaction(
     const db_conn_t conn,
     const char genre[NONNULL restrict const],
-    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, struct movie movie),
     void *NULLABLE callback_data
 ) {
     int rv = sqlite3_bind_text(conn.op_select_movies_genre, 1, genre, -1, SQLITE_STATIC);
@@ -1135,12 +1142,11 @@ static db_result_t search_movies_in_transaction(
         return check_result(rv, sqlite3_reset(conn.op_select_movies_genre));
     }
 
-    struct movie *last_movie;
     const db_result_t res = iter_movies(
         conn.builder,
         conn.op_select_movies_genre,
         conn.op_select_movie_genres,
-        &last_movie,
+        NULL,
         callback,
         callback_data
     );
@@ -1149,7 +1155,6 @@ static db_result_t search_movies_in_transaction(
         return res;
     }
 
-    free(last_movie);
     return DB_SUCCESS;
 }
 
@@ -1157,7 +1162,7 @@ static db_result_t search_movies_in_transaction(
 db_result_t db_search_movies_by_genre(
     db_conn_t *NONNULL conn,
     const char genre[NONNULL restrict const],
-    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, struct movie movie),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 ) {

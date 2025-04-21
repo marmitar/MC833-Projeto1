@@ -37,7 +37,7 @@ struct operation {  // NOLINT(altera-struct-pack-align)
          * If `ty` is something that requires a full movie definition (e.g. ADD_MOVIE), this is a pointer to a
          * newly allocated `struct movie`.
          */
-        struct movie *NONNULL movie;
+        struct movie movie;
 
         /**
          * If `ty` is an operation that just needs an ID and/or a genre, store them here in `movie_id` and `genre`.

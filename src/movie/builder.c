@@ -326,25 +326,8 @@ bool movie_builder_add_genre(movie_builder_t *NONNULL builder, size_t len, const
     return true;
 }
 
-[[gnu::nonnull(1, 2)]]
-/** Dereference current genres into `output` list. */
-static void movie_builder_write_genres_to(const movie_builder_t *builder, const char *NULLABLE output[NONNULL]) {
-    assume(builder != NULL);
-    assume(builder->has_genres);
-    assume(output != NULL);
-
-    const size_t count = builder->current.genres_count;
-    const char *genre = movie_builder_get_const_str(builder, builder->current.genres_slice);
-    for (size_t i = 0; i < count; i++) {
-        output[i] = genre;
-        // move to the next string in buffer
-        genre += strlen(genre) + 1;
-    }
-    output[count] = NULL;
-}
-
 /** Dereference the current movie. */
-bool movie_builder_take_current_movie(movie_builder_t *NONNULL builder, struct movie *NONNULL *NONNULL output) {
+bool movie_builder_take_current_movie(movie_builder_t *NONNULL builder, struct movie *NONNULL output) {
     assume(builder != NULL);
     assume(builder->has_id);
     assume(builder->has_title);
@@ -352,18 +335,20 @@ bool movie_builder_take_current_movie(movie_builder_t *NONNULL builder, struct m
     assume(builder->has_release_year);
     assume(builder->has_genres);
 
-    struct movie *movie = alloc_fam(struct movie, genres, builder->current.genres_count + 1);
-    if unlikely (movie == NULL) {
+    size_t count;
+    const char *NONNULL *genres = movie_builder_take_current_genres(builder, &count);
+    if unlikely (genres == NULL) {
         return false;
     }
 
-    movie->id = builder->current.movie_id;
-    movie->title = movie_builder_get_str(builder, builder->current.title_slice);
-    movie->director = movie_builder_get_str(builder, builder->current.director_slice);
-    movie->release_year = builder->current.release_year;
-    movie_builder_write_genres_to(builder, movie->genres);
-
-    *output = movie;
+    *output = (struct movie) {
+        .id = builder->current.movie_id,
+        .title = movie_builder_get_str(builder, builder->current.title_slice),
+        .director = movie_builder_get_str(builder, builder->current.director_slice),
+        .release_year = builder->current.release_year,
+        .genres = genres,
+        .genre_count = count,
+    };
     return true;
 }
 
@@ -378,15 +363,24 @@ void movie_builder_take_current_summary(movie_builder_t *NONNULL builder, struct
 }
 
 /** Dereference the genre list of the current movie. */
-const char *NULLABLE *NULLABLE movie_builder_take_current_genres(movie_builder_t *NONNULL builder) {
+const char *NONNULL *NULLABLE
+    movie_builder_take_current_genres(movie_builder_t *NONNULL builder, size_t *NONNULL length) {
     assume(builder != NULL);
     assume(builder->has_genres);
 
-    const char *NULLABLE *genres = (const char **) malloc(builder->current.genres_count * sizeof(char *));
-    if unlikely (genres == NULL) {
+    const size_t count = builder->current.genres_count;
+    const char *NONNULL *output = (const char **) malloc(count * sizeof(char *));
+    if unlikely (output == NULL) {
         return NULL;
     }
 
-    movie_builder_write_genres_to(builder, genres);
-    return genres;
+    const char *genre = movie_builder_get_const_str(builder, builder->current.genres_slice);
+    for (size_t i = 0; i < count; i++) {
+        output[i] = genre;
+        // move to the next string in buffer
+        genre += strlen(genre) + 1;
+    }
+
+    *length = count;
+    return output;
 }

@@ -68,15 +68,4 @@ static inline void *NULLABLE alloc_aligned(size_t alignment, size_t count, size_
 /** Internal implementation for variadic `alloc_like` that resolves the `count` as input or default of 1. */
 #define alloc_like_(ty, count, ...) (ty *) assume_aligned_as(alignof(ty), alloc_aligned(alignof(ty), count, sizeof(ty)))
 
-/**
- * `sizeof` for structs with Flexible Array Members.
- */
-#define size_of_fam(ty, last_field, count) (offsetof(ty, last_field) + sizeof(((ty) {}).last_field[0]) * (count))
-
-/**
- * Allocates memore for a struct with Flexible Array Members.
- */
-#define alloc_fam(ty, last_field, count) \
-    (ty *) assume_aligned_as(alignof(ty), alloc_aligned(alignof(ty), size_of_fam(ty, last_field, count), 1))
-
 #endif  // SRC_ALLOC_H

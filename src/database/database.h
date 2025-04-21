@@ -136,7 +136,7 @@ db_result_t db_delete_movie(db_conn_t *NONNULL conn, int64_t movie_id, message_t
 db_result_t db_get_movie(
     db_conn_t *NONNULL conn,
     int64_t movie_id,
-    struct movie *NONNULL *NONNULL movie,
+    struct movie *NONNULL movie,
     message_t *NULLABLE restrict errmsg
 );
 
@@ -151,7 +151,7 @@ db_result_t db_get_movie(
  */
 db_result_t db_list_movies(
     db_conn_t *NONNULL conn,
-    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, struct movie movie),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 );
@@ -168,7 +168,7 @@ db_result_t db_list_movies(
 db_result_t db_search_movies_by_genre(
     db_conn_t *NONNULL conn,
     const char genre[NONNULL restrict const],
-    bool callback(void *UNSPECIFIED data, const struct movie *NONNULL movie),
+    bool callback(void *UNSPECIFIED data, struct movie movie),
     void *NULLABLE callback_data,
     message_t *NULLABLE restrict errmsg
 );
