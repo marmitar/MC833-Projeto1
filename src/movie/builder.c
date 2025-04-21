@@ -12,16 +12,13 @@
 #include "./builder.h"
 #include "./movie.h"
 
-/** Optimal alignment for `struct movie_ref`. */
-#define ALIGNMENT_MOVIE_REF 64
-
 /**
  * Movie using string references inside `movie_builder_t`.
  *
  * The references are valid in between calls to `movie_builder_reset()`. Once dereferenced, the `movie_builder_t`
  * should not be mutated anymore, until all references are dropped.
  */
-struct [[gnu::aligned(ALIGNMENT_MOVIE_REF)]] movie_ref {
+struct movie_ref {  // NOLINT(altera-struct-pack-align)
     /** The actual id. */
     int64_t movie_id;
     /** A reference to the title slice in `movie_builder_t`. */
@@ -90,7 +87,8 @@ movie_builder_t *NULLABLE movie_builder_create(void) {
         return NULL;
     }
 
-    [[gnu::aligned(BUFFER_PAGE_SIZE)]] char *data = alloc_aligned(BUFFER_PAGE_SIZE, BUFFER_PAGE_SIZE, sizeof(char));
+    [[gnu::aligned(BUFFER_PAGE_SIZE)]]
+    char *data = alloc_aligned(BUFFER_PAGE_SIZE, BUFFER_PAGE_SIZE, sizeof(char));
     if unlikely (data == NULL) {
         free(builder);
         return NULL;
@@ -147,9 +145,8 @@ static inline size_t ceil_div(size_t a, size_t b) {
 /**
  * Reallocates the `str_data` buffer to hold `additional_size` more bytes.
  */
-static bool movie_builder_realloc_str_data(movie_builder_t *NONNULL b, size_t additional_size) {
-    assume(b != NULL);
-    movie_builder_t *NONNULL builder = aligned_like(struct movie_builder, b);
+static bool movie_builder_realloc_str_data(movie_builder_t *NONNULL builder, size_t additional_size) {
+    assume(builder != NULL);
     // assume that we don't already have capacity for `additional_size`
     assume(builder->str_capacity >= builder->str_in_use);
     assume(builder->str_capacity - builder->str_in_use < additional_size);
@@ -161,7 +158,8 @@ static bool movie_builder_realloc_str_data(movie_builder_t *NONNULL b, size_t ad
     assume(final_size > builder->str_in_use);
     const size_t final_capacity = ceil_div(final_size, BUFFER_PAGE_SIZE) * BUFFER_PAGE_SIZE;
 
-    [[gnu::aligned(BUFFER_PAGE_SIZE)]] char *data = alloc_aligned(BUFFER_PAGE_SIZE, final_capacity, sizeof(char));
+    [[gnu::aligned(BUFFER_PAGE_SIZE)]]
+    char *data = alloc_aligned(BUFFER_PAGE_SIZE, final_capacity, sizeof(char));
     if unlikely (data == NULL) {
         return false;
     };
@@ -185,9 +183,8 @@ static bool movie_builder_realloc_str_data(movie_builder_t *NONNULL b, size_t ad
  * Returns `true` if the operation was completed successfully, and the requested slice index is written to `slice`.
  * Otherwise, `false` is returned.
  */
-static bool movie_builder_slice(movie_builder_t *NONNULL b, size_t size, size_t *NONNULL slice) {
-    assume(b != NULL);
-    movie_builder_t *NONNULL builder = aligned_like(struct movie_builder, b);
+static bool movie_builder_slice(movie_builder_t *NONNULL builder, size_t size, size_t *NONNULL slice) {
+    assume(builder != NULL);
 
     assume(builder->str_capacity >= builder->str_in_use);
     if unlikely (size > builder->str_capacity - builder->str_in_use) {
@@ -208,7 +205,10 @@ static inline char *NONNULL movie_builder_get_str(movie_builder_t *NONNULL build
     assume(builder != NULL);
     assume(slice <= builder->str_in_use);
 
-    return &(builder->str_data[slice]);
+    [[gnu::aligned(BUFFER_PAGE_SIZE)]]
+    char *NONNULL data = aligned_as(BUFFER_PAGE_SIZE, builder->str_data);
+
+    return &(data[slice]);
 }
 
 [[gnu::pure, gnu::nonnull(1)]]
@@ -217,7 +217,10 @@ static inline const char *NONNULL movie_builder_get_const_str(const movie_builde
     assume(builder != NULL);
     assume(slice <= builder->str_in_use);
 
-    return &(builder->str_data[slice]);
+    [[gnu::aligned(BUFFER_PAGE_SIZE)]]
+    const char *NONNULL data = aligned_as(BUFFER_PAGE_SIZE, builder->str_data);
+
+    return &(data[slice]);
 }
 
 [[gnu::nonnull(1, 3, 4)]]

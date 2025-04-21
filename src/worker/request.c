@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -136,7 +137,7 @@ static struct ip_string get_peer_ip(int sock_fd) {
         return UNKNOWN;
     }
 
-    str.ip[MAX_IP_LEN - 1] = '\0';
+    assert(strlen(str.ip) < MAX_IP_LEN);
     return str;
 }
 

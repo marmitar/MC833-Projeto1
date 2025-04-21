@@ -31,7 +31,7 @@ enum [[gnu::packed]] operation_ty {
 /**
  * A parsed operation that either points to a `struct movie` or a movie/genre key.
  */
-struct [[gnu::aligned(ALIGNMENT_OPERATION_STRUCT)]] operation {
+struct operation {  // NOLINT(altera-struct-pack-align)
     union {
         /**
          * If `ty` is something that requires a full movie definition (e.g. ADD_MOVIE), this is a pointer to a
@@ -42,7 +42,7 @@ struct [[gnu::aligned(ALIGNMENT_OPERATION_STRUCT)]] operation {
         /**
          * If `ty` is an operation that just needs an ID and/or a genre, store them here in `movie_id` and `genre`.
          */
-        struct [[gnu::aligned(2 * sizeof(int64_t))]] movie_key {
+        struct movie_key {  // NOLINT(altera-struct-pack-align)
             int64_t movie_id;
             char *NULLABLE genre;
         } key;

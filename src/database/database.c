@@ -242,6 +242,9 @@ struct [[gnu::aligned(ALIGNMENT_DB_CONN)]] database_connection {
     /** List all movies for a single genre. */
     sqlite3_stmt *NONNULL op_select_movies_genre;
 };
+// ensure no padding here, even after correct alignment
+static_assert(sizeof(db_conn_t) == alignof(db_conn_t));
+static_assert(sizeof(db_conn_t) == offsetof(db_conn_t, op_select_movies_genre) + sizeof(void *));
 
 [[gnu::malloc, gnu::nonnull(1, 3, 4)]]
 /** Build a SQLite statement for persistent use. Returns NULL on failure. */

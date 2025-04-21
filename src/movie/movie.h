@@ -10,7 +10,7 @@
 /**
  * Represents a single movie record, including an embedded list of genres.
  */
-struct [[gnu::aligned(sizeof(int64_t))]] movie {
+struct movie {
     /** Unique identifier for the movie entry in the database. */
     int64_t id;  // zero for adding
     /** Movie title. */
