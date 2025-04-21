@@ -12,15 +12,19 @@
 #include "./defines.h"
 
 /** Check that the pointer is aligned correctly after allocation. */
-#define is_aligned_(alignment, ptr) ((uintptr_t) ptr) % alignment == 0  // NOLINT(bugprone-macro-parentheses)
+#define is_aligned(alignment, ptr) ((uintptr_t) ptr) % alignment == 0  // NOLINT(bugprone-macro-parentheses)
+
+#define assume_aligned_as(alignment, ptr) __builtin_assume_aligned(ptr, alignment)
 
 #if defined(__clang__)
-/** Assume pointer is aligned to `ty`. Checked on DEBUG builds. */
-#    define get_aligned(ty, ptr) __builtin_assume_aligned((assume(is_aligned_(alignof(ty), ptr)), (ptr)), alignof(ty))
+/**  */
+#    define aligned_as(alignment, ptr) assume_aligned_as(alignment, (assume(is_aligned(alignment, ptr)), (ptr)))
 #else  // GCC
-/** Assume pointer is aligned to `ty`. Checked on DEBUG builds. */
-#    define get_aligned(ty, ptr) __builtin_assume_aligned((assert(is_aligned_(alignof(ty), ptr)), (ptr)), alignof(ty))
+#    define aligned_as(alignment, ptr) assume_aligned_as(alignment, (assert(is_aligned(alignment, ptr)), (ptr)))
 #endif
+
+/** Assume pointer is aligned to `ty`. Checked on DEBUG builds. */
+#define aligned_like(ty, ptr) aligned_as(alignof(ty), ptr)
 
 /** Check that `number` is a power of two. Used for alignment. */
 #define is_power_of_two(number) (__builtin_popcountg(number) == 1)
@@ -31,7 +35,7 @@
  *
  * Allocates a memory for `count` elements of size `size`, all aligned to `alignment`. This function is always inlined,
  * so the checks are visible on call site, and can be optimized away most of the time, reducing the function call to
- * `aligned_alloc(alignement, count * size)`.
+ * `aligned_alloc(alignment, count * size)`.
  *
  * Returns `NULL` if: `alignment` is not a power of two, `count * size` overflows, or if allocation fails (`ENOMEM`).
  */
@@ -42,7 +46,7 @@ static inline void *NULLABLE calloc_aligned(size_t alignment, size_t count, size
         return NULL;
     }
 
-    size_t bytes = 0;
+    size_t bytes;
     bool overflow = ckd_mul(&bytes, count, size);
     if unlikely (overflow) {
         return NULL;
@@ -53,7 +57,7 @@ static inline void *NULLABLE calloc_aligned(size_t alignment, size_t count, size
         return NULL;
     }
 
-    assume(is_aligned_(alignment, ptr));
+    assume(is_aligned(alignment, ptr));
     memset(ptr, 0, bytes);
     return ptr;
 }
@@ -64,7 +68,7 @@ static inline void *NULLABLE calloc_aligned(size_t alignment, size_t count, size
 #define calloc_like(ty, ...) calloc_like_(ty, __VA_ARGS__ __VA_OPT__(, ) 1)
 /** Internal implementation for variadic `calloc_like` that resolves the `count` as input or default of 1. */
 #define calloc_like_(ty, count, ...) \
-    (ty *) __builtin_assume_aligned(calloc_aligned(alignof(ty), count, sizeof(ty)), alignof(ty))
+    (ty *) assume_aligned_as(alignof(ty), calloc_aligned(alignof(ty), count, sizeof(ty)))
 
 /**
  * `sizeof` for structs with Flexible Array Members.
@@ -75,6 +79,6 @@ static inline void *NULLABLE calloc_aligned(size_t alignment, size_t count, size
  * Allocates memore for a struct with Flexible Array Members.
  */
 #define calloc_fam(ty, last_field, count) \
-    (ty *) __builtin_assume_aligned(calloc_aligned(alignof(ty), size_of_fam(ty, last_field, count), 1), alignof(ty))
+    (ty *) assume_aligned_as(alignof(ty), calloc_aligned(alignof(ty), size_of_fam(ty, last_field, count), 1))
 
 #endif  // SRC_ALLOC_H

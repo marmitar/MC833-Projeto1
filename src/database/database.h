@@ -8,15 +8,16 @@
 #include <stdint.h>
 
 #include "../defines.h"
+#include "../movie/movie.h"
 
 /** The default database name. */
 static constexpr const char DATABASE[] = "movies.db";
 
 /** Enforced alignment for `db_conn_t`. */
-#define DB_CONN_ALIGNMENT 128
+#define ALIGNMENT_DB_CONN 128
 
 /** Opaque handle to a database connection. */
-typedef struct database_connection db_conn_t [[gnu::aligned(DB_CONN_ALIGNMENT)]];
+typedef struct database_connection db_conn_t [[gnu::aligned(ALIGNMENT_DB_CONN)]];
 
 /** Output error messages, never nullable. */
 typedef const char *NONNULL message_t;
@@ -44,7 +45,7 @@ void db_free_errmsg(message_t errmsg);
 
 [[nodiscard("allocated memory must be freed"),
   gnu::malloc,
-  gnu::assume_aligned(DB_CONN_ALIGNMENT),
+  gnu::assume_aligned(ALIGNMENT_DB_CONN),
   gnu::nonnull(1),
   gnu::leaf,
   gnu::nothrow]]
@@ -83,36 +84,6 @@ typedef enum [[gnu::packed]] db_result {
 } db_result_t;
 
 static_assert(sizeof(db_result_t) == 1);
-
-/**
- * Represents a single movie record, including an embedded list of genres.
- */
-struct [[gnu::aligned(sizeof(int64_t))]] movie {
-    /** Unique identifier for the movie entry in the database. */
-    int64_t id;  // zero for adding
-    /** Movie title. */
-    const char *NONNULL title;
-    /** Director name. */
-    const char *NONNULL director;
-    /** Year the movie was released. */
-    int release_year;
-    /** `NULL` terminated list of genres for the movie. */
-    const char *NULLABLE genres[];
-};
-
-static_assert(sizeof(struct movie) == offsetof(struct movie, genres));
-
-/**
- * Short representation of a movie.
- */
-struct [[gnu::aligned(2 * sizeof(int64_t))]] movie_summary {
-    /** Unique identifier for the movie entry in the database. */
-    int64_t id;
-    /** Embedded movie title. */
-    const char *NONNULL title;
-};
-// even on 32 bit, fields should be aligned to 8 bytes here
-static_assert(sizeof(struct movie_summary) == 2 * sizeof(int64_t));
 
 [[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**

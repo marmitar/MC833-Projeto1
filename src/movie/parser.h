@@ -8,8 +8,8 @@
 
 #include <yaml.h>
 
-#include "../database/database.h"
 #include "../defines.h"
+#include "./movie.h"
 
 /**
  * Enum for high-level operations that can be parsed from YAML.
@@ -26,12 +26,12 @@ enum [[gnu::packed]] operation_ty {
 };
 
 /** Optimal alignment for `struct operation`. */
-#define OPERATION_STRUCT_ALIGNMENT 32
+#define ALIGNMENT_OPERATION_STRUCT 32
 
 /**
  * A parsed operation that either points to a `struct movie` or a movie/genre key.
  */
-struct [[gnu::aligned(OPERATION_STRUCT_ALIGNMENT)]] operation {
+struct [[gnu::aligned(ALIGNMENT_OPERATION_STRUCT)]] operation {
     union {
         /**
          * If `ty` is something that requires a full movie definition (e.g. ADD_MOVIE), this is a pointer to a

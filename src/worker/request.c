@@ -15,7 +15,8 @@
 #include "../alloc.h"
 #include "../database/database.h"
 #include "../defines.h"
-#include "./parser.h"
+#include "../movie/movie.h"
+#include "../movie/parser.h"
 #include "./request.h"
 
 /** Display code in %hhu format. */
@@ -60,7 +61,7 @@ static bool handle_result(pthread_t id, int sock_fd, message_t errmsg, db_result
  */
 static bool send_movie(void *NONNULL sock_ptr, const struct movie *NULLABLE m) {
     const int sock_fd = INT_FROM_PTR(sock_ptr);
-    const struct movie *NONNULL movie = get_aligned(struct movie, m);
+    const struct movie *NONNULL movie = aligned_like(struct movie, m);
 
     if unlikely (movie == NULL) {
         char msg[] = "server: null\n";

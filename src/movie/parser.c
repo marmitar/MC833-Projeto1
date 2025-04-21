@@ -11,8 +11,8 @@
 #include <yaml.h>
 
 #include "../alloc.h"
-#include "../database/database.h"
 #include "../defines.h"
+#include "./movie.h"
 #include "./parser.h"
 
 [[gnu::nonnull(1), gnu::hot]]
@@ -378,7 +378,7 @@ static struct operation parse_movie(yaml_parser_t *NONNULL parser, enum operatio
             case YAML_MAPPING_END_EVENT:
                 yaml_event_delete(&event);
                 // try to close the current operation
-                if likely (title != NULL && director != NULL && needs_year && genres != NULL) {
+                if likely (title != NULL && director != NULL && !needs_year && genres != NULL) {
                     size_t len = list_len((const char *const *) genres);
                     struct movie *movie = calloc_fam(struct movie, genres, len + 1);
                     if unlikely (movie == NULL) {
