@@ -59,9 +59,7 @@ static bool handle_result(pthread_t id, int sock_fd, message_t errmsg, db_result
  * Formats the fields of `movie` and writes them to the socket. Continues returning false so iteration can keep going,
  * unless you want to stop after the first record.
  */
-static bool send_movie(void *NONNULL sock_ptr, struct movie movie) {
-    const int sock_fd = INT_FROM_PTR(sock_ptr);
-
+static void send_movie(int sock_fd, struct movie movie) {
     // Ideally, we should be a single in-memory buffer and send a single data to the client, as to
     // - not clog the SQLite database lock
     // - allow faster communication by the kernel
@@ -81,7 +79,7 @@ static bool send_movie(void *NONNULL sock_ptr, struct movie movie) {
         send(sock_fd, msg, strlen(msg), 0);
     }
     send(sock_fd, "\n", strlen("\n"), 0);
-    return false;
+    free_movie(movie);
 }
 
 [[gnu::hot]]
@@ -90,13 +88,26 @@ static bool send_movie(void *NONNULL sock_ptr, struct movie movie) {
  *
  * @return false to keep listing.
  */
-static bool send_summary(void *NONNULL sock_ptr, const struct movie_summary summary) {
-    const int sock_fd = INT_FROM_PTR(sock_ptr);
-
+static void send_summary(int sock_fd, const struct movie_summary summary) {
     char msg[RESP_LEN];
     (void) snprintf(msg, sizeof(msg), "movie[id=%" PRIi64 "]: %s\n", summary.id, summary.title);
     send(sock_fd, msg, strlen(msg), 0);
-    return false;
+}
+
+/** Sends multiple movies at once. */
+static void send_movie_list(int sock_fd, size_t count, struct movie movie[NONNULL count]) {
+    for (size_t i = 0; i < count; i++) {
+        send_movie(sock_fd, movie[i]);
+    }
+    free(movie);
+}
+
+/** Sends multiple summaries at once. */
+static void send_summary_list(int sock_fd, size_t count, struct movie_summary summary[NONNULL count]) {
+    for (size_t i = 0; i < count; i++) {
+        send_summary(sock_fd, summary[i]);
+    }
+    free(summary);
 }
 
 /** Length for an IP text representation. */
@@ -208,7 +219,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 send(sock_fd, response, strlen(response), 0);
                 (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
-                result = db_add_genres(db, op.key.movie_id, (const char *[2]) {op.key.genre, NULL}, &errmsg);
+                result = db_add_genre(db, op.key.movie_id, op.key.genre, &errmsg);
                 free(op.key.genre);
                 break;
             }
@@ -240,9 +251,9 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
 
                 struct movie movie;
                 result = db_get_movie(db, op.key.movie_id, &movie, &errmsg);
-
-                send_movie(PTR_FROM_INT(sock_fd), movie);
-                free_movie(movie);
+                if likely (result == DB_SUCCESS) {
+                    send_movie(sock_fd, movie);
+                }
                 break;
             }
             case LIST_MOVIES: {
@@ -250,7 +261,12 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 send(sock_fd, response, strlen(response), 0);
                 (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
-                result = db_list_movies(db, send_movie, PTR_FROM_INT(sock_fd), &errmsg);
+                size_t list_size;
+                struct movie *list;
+                result = db_list_movies(db, &list, &list_size, &errmsg);
+                if likely (result == DB_SUCCESS) {
+                    send_movie_list(sock_fd, list_size, list);
+                }
                 break;
             }
             case SEARCH_BY_GENRE: {
@@ -259,7 +275,13 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 send(sock_fd, response, strlen(response), 0);
                 (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
-                result = db_search_movies_by_genre(db, op.key.genre, send_movie, PTR_FROM_INT(sock_fd), &errmsg);
+                size_t list_size;
+                struct movie *list;
+                result = db_search_movies_by_genre(db, op.key.genre, &list, &list_size, &errmsg);
+                free(op.key.genre);
+                if likely (result == DB_SUCCESS) {
+                    send_movie_list(sock_fd, list_size, list);
+                }
                 break;
             }
             case LIST_SUMMARIES: {
@@ -268,7 +290,12 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 send(sock_fd, response, strlen(response), 0);
                 (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
-                result = db_list_summaries(db, send_summary, PTR_FROM_INT(sock_fd), &errmsg);
+                size_t list_size;
+                struct movie_summary *list;
+                result = db_list_summaries(db, &list, &list_size, &errmsg);
+                if likely (result == DB_SUCCESS) {
+                    send_summary_list(sock_fd, list_size, list);
+                }
                 break;
             }
             case INVALID_OP:

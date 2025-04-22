@@ -766,7 +766,7 @@ db_result_t db_register_movie(
 static db_result_t add_genres_in_transaction(
     const db_conn_t conn,
     size_t len,
-    const char *NONNULL const genres[NONNULL restrict len],
+    const char *NONNULL restrict const genres[NONNULL len],
     int64_t movie_id
 ) {
     for (size_t i = 0; i < len; i++) {
@@ -800,35 +800,19 @@ static db_result_t add_genres_in_transaction(
     return DB_SUCCESS;
 }
 
-[[gnu::pure, gnu::nonnull(1)]]
-/** Calculate the size of a NULL terminated list of strings. */
-static size_t list_len(const char *NULLABLE const list[NONNULL]) {
-    size_t len = 0;
-    while (list[len] != NULL) {
-        len++;
-    }
-    return len;
-}
-
 /** Adds a list of genres tp an existing movie. */
-db_result_t db_add_genres(
+db_result_t db_add_genre(
     db_conn_t *NONNULL conn,
     int64_t movie_id,
-    const char *NULLABLE const genres[NONNULL restrict],
+    const char genre[NONNULL restrict const],
     message_t *NULLABLE restrict errmsg
 ) {
-    const size_t len = list_len(genres);
-    if unlikely (len == 0) {
-        errmsg_dup_str(errmsg, "empty list of genres to add, operation ignored");
-        return DB_USER_ERROR;
-    }
-
     db_result_t res = db_transaction_begin(conn, errmsg);
     if unlikely (res != DB_SUCCESS) {
         return res;
     }
 
-    res = add_genres_in_transaction(*conn, len, genres, movie_id);
+    res = add_genres_in_transaction(*conn, 1, &genre, movie_id);
     if likely (res == DB_SUCCESS) {
         return db_transaction_commit(conn, errmsg);
     }
@@ -896,13 +880,12 @@ static const char *NULLABLE get_str_column(sqlite3_stmt *NONNULL stmt, int colum
     return str;
 }
 
-[[gnu::nonnull(1, 2, 3, 4)]]
+[[gnu::nonnull(1, 2, 3)]]
 /** Build movie data into `buffer` and correct pointers to `movie`. */
 static db_result_t get_movie_with_genres(
     movie_builder_t *NONNULL builder,
     sqlite3_stmt *NONNULL outer_stmt,
-    sqlite3_stmt *NONNULL inner_stmt,
-    struct movie *NONNULL movie
+    sqlite3_stmt *NONNULL inner_stmt
 ) {
     size_t title_len;
     size_t director_len;
@@ -915,7 +898,6 @@ static db_result_t get_movie_with_genres(
         return DB_RUNTIME_ERROR;
     }
 
-    movie_builder_reset(builder);
     movie_builder_set_id(builder, id);
     movie_builder_set_release_year(builder, release_year);
     bool ok1 = movie_builder_set_title(builder, title_len, title);
@@ -950,39 +932,29 @@ static db_result_t get_movie_with_genres(
         return check_result(rv, rrv);
     }
 
-    bool ok = movie_builder_take_current_movie(builder, movie);
-    return likely(ok) ? DB_SUCCESS : DB_RUNTIME_ERROR;
+    return DB_SUCCESS;
 }
 
-[[gnu::nonnull(1, 2, 3, 5)]]
+[[gnu::nonnull(1, 2, 3)]]
 /** Iterate over movie entries, calling `callback` on each and returning the final result in `movie`.  */
 static db_result_t iter_movies(
-    movie_builder_t *NONNULL buffer,
+    movie_builder_t *NONNULL builder,
     sqlite3_stmt *NONNULL outer_stmt,
-    sqlite3_stmt *NONNULL inner_stmt,
-    struct movie *NULLABLE last_movie,
-    bool callback(void *UNSPECIFIED data, struct movie summary),
-    void *NULLABLE callback_data
+    sqlite3_stmt *NONNULL inner_stmt
 ) {
-    bool has_last_movie = false;
-    struct movie current_movie;
+    movie_builder_reset(builder);
 
     int rv;
     db_result_t res;
     while ((rv = sqlite3_step(outer_stmt)) == SQLITE_ROW) {
-        if likely (has_last_movie) {
-            free_movie(current_movie);
-            has_last_movie = false;
-        }
-
-        res = get_movie_with_genres(buffer, outer_stmt, inner_stmt, &current_movie);
+        res = get_movie_with_genres(builder, outer_stmt, inner_stmt);
         if unlikely (res != DB_SUCCESS) {
             break;
         }
 
-        bool stop = callback(callback_data, current_movie);
-        has_last_movie = true;
-        if (stop) {
+        bool ok = movie_builder_add_current_movie_to_list(builder);
+        if unlikely (!ok) {
+            res = DB_RUNTIME_ERROR;
             break;
         }
     }
@@ -990,59 +962,42 @@ static db_result_t iter_movies(
     sqlite3_clear_bindings(outer_stmt);
     int rrv = sqlite3_reset(outer_stmt);
     if unlikely ((rv != SQLITE_DONE && rv != SQLITE_ROW) || rrv != SQLITE_OK) {
-        if (has_last_movie) {
-            free_movie(current_movie);
-        }
         return check_result(rv, rrv);
     } else if unlikely (res != DB_SUCCESS) {
-        if (has_last_movie) {
-            free_movie(current_movie);
-        }
         return res;
     }
 
-    if (has_last_movie) {
-        if (last_movie != NULL) {
-            *last_movie = current_movie;
-        } else {
-            free_movie(current_movie);
-        }
-    }
     return DB_SUCCESS;
-}
-
-[[gnu::nonnull(1)]]
-/** Count each iteration. */
-static bool count_iterations(void *NONNULL counter, [[maybe_unused]] const struct movie movie) {
-    unsigned *cnt = (unsigned *) counter;
-    (*cnt) += 1;
-    return false;
 }
 
 [[gnu::nonnull(3)]]
 /** Read a single movie and write to `movie`. */
-static db_result_t get_movie_in_transaction(const db_conn_t conn, int64_t movie_id, struct movie *NONNULL movie) {
+static db_result_t get_movie_in_transaction(const db_conn_t conn, int64_t movie_id, struct movie *NONNULL output) {
     int rv = sqlite3_bind_int64(conn.op_select_movie, 1, movie_id);
     if unlikely (rv != SQLITE_OK) {
         sqlite3_clear_bindings(conn.op_select_movie);
         return check_result(rv, sqlite3_reset(conn.op_select_movie));
     }
 
-    unsigned count;
-    const db_result_t res =
-        iter_movies(conn.builder, conn.op_select_movie, conn.op_select_movie_genres, movie, count_iterations, &count);
+    const db_result_t res = iter_movies(conn.builder, conn.op_select_movie, conn.op_select_movie_genres);
     if unlikely (res != DB_SUCCESS) {
         return res;
     }
 
-    return (count < 1) ? DB_USER_ERROR : DB_SUCCESS;
+    size_t count = movie_builder_list_size(conn.builder);
+    if unlikely (count < 1) {
+        return DB_USER_ERROR;
+    }
+
+    bool ok = movie_builder_take_movie_from_list(conn.builder, 0, output);
+    return unlikely(!ok) ? DB_USER_ERROR : DB_SUCCESS;
 }
 
 /** Get a movie from the database. */
 db_result_t db_get_movie(
     db_conn_t *NONNULL conn,
     int64_t movie_id,
-    struct movie *NONNULL movie,
+    struct movie *NONNULL output,
     message_t *NULLABLE restrict errmsg
 ) {
     db_result_t res = db_transaction_begin(conn, errmsg);
@@ -1050,11 +1005,11 @@ db_result_t db_get_movie(
         return res;
     }
 
-    res = get_movie_in_transaction(*conn, movie_id, movie);
+    res = get_movie_in_transaction(*conn, movie_id, output);
     if likely (res == DB_SUCCESS) {
         res = db_transaction_commit(conn, errmsg);
         if unlikely (res != DB_SUCCESS) {
-            free_movie(*movie);
+            free_movie(*output);
         }
         return res;
     }
@@ -1082,30 +1037,31 @@ db_result_t db_get_movie(
 /** Read all movies and run callback on each. */
 static db_result_t list_movies_in_transaction(
     const db_conn_t conn,
-    bool callback(void *UNSPECIFIED data, struct movie movie),
-    void *NULLABLE callback_data
+    struct movie *NONNULL *NONNULL output,
+    size_t *NONNULL output_length
 ) {
-    const db_result_t res = iter_movies(
-        conn.builder,
-        conn.op_select_all_movies,
-        conn.op_select_movie_genres,
-        NULL,
-        callback,
-        callback_data
-    );
+    const db_result_t res = iter_movies(conn.builder, conn.op_select_all_movies, conn.op_select_movie_genres);
 
     if unlikely (res != DB_SUCCESS) {
         return res;
     }
 
+    size_t length;
+    struct movie *list = movie_builder_take_movie_list(conn.builder, &length);
+    if unlikely (list == NULL) {
+        return DB_RUNTIME_ERROR;
+    }
+
+    *output = list;
+    *output_length = length;
     return DB_SUCCESS;
 }
 
 /** List all movies with full information. */
 db_result_t db_list_movies(
     db_conn_t *NONNULL conn,
-    bool callback(void *UNSPECIFIED data, struct movie movie),
-    void *NULLABLE callback_data,
+    struct movie *NONNULL *NONNULL output,
+    size_t *NONNULL output_length,
     message_t *NULLABLE restrict errmsg
 ) {
     db_result_t res = db_transaction_begin(conn, errmsg);
@@ -1113,7 +1069,7 @@ db_result_t db_list_movies(
         return res;
     }
 
-    res = list_movies_in_transaction(*conn, callback, callback_data);
+    res = list_movies_in_transaction(*conn, output, output_length);
     if likely (res == DB_SUCCESS) {
         return db_transaction_commit(conn, errmsg);
     }
@@ -1132,8 +1088,8 @@ db_result_t db_list_movies(
 static db_result_t search_movies_in_transaction(
     const db_conn_t conn,
     const char genre[NONNULL restrict const],
-    bool callback(void *UNSPECIFIED data, struct movie movie),
-    void *NULLABLE callback_data
+    struct movie *NONNULL *NONNULL output,
+    size_t *NONNULL output_length
 ) {
     int rv = sqlite3_bind_text(conn.op_select_movies_genre, 1, genre, -1, SQLITE_STATIC);
     if unlikely (rv != SQLITE_OK) {
@@ -1141,19 +1097,20 @@ static db_result_t search_movies_in_transaction(
         return check_result(rv, sqlite3_reset(conn.op_select_movies_genre));
     }
 
-    const db_result_t res = iter_movies(
-        conn.builder,
-        conn.op_select_movies_genre,
-        conn.op_select_movie_genres,
-        NULL,
-        callback,
-        callback_data
-    );
+    const db_result_t res = iter_movies(conn.builder, conn.op_select_movies_genre, conn.op_select_movie_genres);
 
     if unlikely (res != DB_SUCCESS) {
         return res;
     }
 
+    size_t length;
+    struct movie *list = movie_builder_take_movie_list(conn.builder, &length);
+    if unlikely (list == NULL) {
+        return DB_RUNTIME_ERROR;
+    }
+
+    *output = list;
+    *output_length = length;
     return DB_SUCCESS;
 }
 
@@ -1161,8 +1118,8 @@ static db_result_t search_movies_in_transaction(
 db_result_t db_search_movies_by_genre(
     db_conn_t *NONNULL conn,
     const char genre[NONNULL restrict const],
-    bool callback(void *UNSPECIFIED data, struct movie movie),
-    void *NULLABLE callback_data,
+    struct movie *NONNULL *NONNULL output,
+    size_t *NONNULL output_length,
     message_t *NULLABLE restrict errmsg
 ) {
     db_result_t res = db_transaction_begin(conn, errmsg);
@@ -1170,7 +1127,7 @@ db_result_t db_search_movies_by_genre(
         return res;
     }
 
-    res = search_movies_in_transaction(*conn, genre, callback, callback_data);
+    res = search_movies_in_transaction(*conn, genre, output, output_length);
     if likely (res == DB_SUCCESS) {
         return db_transaction_commit(conn, errmsg);
     }
@@ -1184,12 +1141,11 @@ db_result_t db_search_movies_by_genre(
     return res;
 }
 
-[[gnu::nonnull(1, 2, 3)]]
+[[gnu::nonnull(1, 2)]]
 /** Build summary data using `buffer`. */
-static db_result_t get_summary(
+static db_result_t get_summary_in_list(
     movie_builder_t *NONNULL builder,
-    sqlite3_stmt *NONNULL stmt,
-    struct movie_summary *NONNULL summary
+    sqlite3_stmt *NONNULL stmt
 ) {
     size_t title_len;
     const int64_t id = sqlite3_column_int64(stmt, 0);
@@ -1199,14 +1155,16 @@ static db_result_t get_summary(
         return DB_RUNTIME_ERROR;
     }
 
-    movie_builder_reset(builder);
     movie_builder_set_id(builder, id);
     bool ok = movie_builder_set_title(builder, title_len, title);
     if unlikely (!ok) {
         return DB_RUNTIME_ERROR;
     }
 
-    movie_builder_take_current_summary(builder, summary);
+    ok = movie_builder_add_current_summary_to_list(builder);
+    if unlikely(!ok) {
+        return DB_RUNTIME_ERROR;
+    }
     return DB_SUCCESS;
 }
 
@@ -1214,21 +1172,16 @@ static db_result_t get_summary(
 /** Read title and id of all movies and run callback on each. */
 static db_result_t list_summaries_in_transaction(
     const db_conn_t conn,
-    bool callback(void *UNSPECIFIED data, struct movie_summary summary),
-    void *NULLABLE callback_data
+    struct movie_summary *NONNULL *NONNULL output,
+    size_t *NONNULL output_length
 ) {
+    movie_builder_reset(conn.builder);
 
     int rv;
     db_result_t res;
     while ((rv = sqlite3_step(conn.op_select_all_titles)) == SQLITE_ROW) {
-        struct movie_summary summary;
-        res = get_summary(conn.builder, conn.op_select_all_titles, &summary);
+        res = get_summary_in_list(conn.builder, conn.op_select_all_titles);
         if unlikely (res != DB_SUCCESS) {
-            break;
-        }
-
-        bool stop = callback(callback_data, summary);
-        if (stop) {
             break;
         }
     }
@@ -1241,14 +1194,22 @@ static db_result_t list_summaries_in_transaction(
         return res;
     }
 
+    size_t length;
+    struct movie_summary *list = movie_builder_take_summary_list(conn.builder, &length);
+    if unlikely (list == NULL) {
+        return DB_RUNTIME_ERROR;
+    }
+
+    *output = list;
+    *output_length = length;
     return DB_SUCCESS;
 }
 
 /** List all movies with reduced information. */
 db_result_t db_list_summaries(
     db_conn_t *NONNULL conn,
-    bool callback(void *UNSPECIFIED data, struct movie_summary summary),
-    void *NULLABLE callback_data,
+    struct movie_summary *NONNULL *NONNULL output,
+    size_t *NONNULL output_length,
     message_t *NULLABLE restrict errmsg
 ) {
     db_result_t res = db_transaction_begin(conn, errmsg);
@@ -1256,7 +1217,7 @@ db_result_t db_list_summaries(
         return res;
     }
 
-    res = list_summaries_in_transaction(*conn, callback, callback_data);
+    res = list_summaries_in_transaction(*conn, output, output_length);
     if likely (res == DB_SUCCESS) {
         return db_transaction_commit(conn, errmsg);
     }

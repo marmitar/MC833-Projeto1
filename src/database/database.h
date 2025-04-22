@@ -104,17 +104,17 @@ db_result_t db_register_movie(
 
 [[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
- * Adds new genres from a NULL terminated list to an existing movie.
+ * Adds a new genre to an existing movie.
  *
  * Ensures the movie exists and the genre is new to that movie. If required, also creates a entry for the genre itself.
  *
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
  stores an error message there.
  */
-db_result_t db_add_genres(
+db_result_t db_add_genre(
     db_conn_t *NONNULL conn,
     int64_t movie_id,
-    const char *NULLABLE const genres[NONNULL restrict],
+    const char genre[NONNULL restrict const],
     message_t *NULLABLE restrict errmsg
 );
 
@@ -129,7 +129,7 @@ db_result_t db_delete_movie(db_conn_t *NONNULL conn, int64_t movie_id, message_t
 
 [[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
- * Get a movie from the database and write it to `movie`. The caller is reponsible for calling `free` on it.
+ * Get a movie from the database and write it to `movie`. The caller is reponsible for calling `free` on each.
  *
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
  stores an error message there.
@@ -137,56 +137,52 @@ db_result_t db_delete_movie(db_conn_t *NONNULL conn, int64_t movie_id, message_t
 db_result_t db_get_movie(
     db_conn_t *NONNULL conn,
     int64_t movie_id,
-    struct movie *NONNULL movie,
+    struct movie *NONNULL output,
     message_t *NULLABLE restrict errmsg
 );
 
-[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2), gnu::hot]]
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2, 3), gnu::hot]]
 /**
- * List all movies from the database and run `callback` on each one.
- *
- * Stops whenever the callback returns true.
+ * List all movies from the database and run `callback` on each one. The caller is reponsible for calling `free` on it.
  *
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
  stores an error message there.
  */
 db_result_t db_list_movies(
     db_conn_t *NONNULL conn,
-    bool callback(void *UNSPECIFIED data, struct movie movie),
-    void *NULLABLE callback_data,
+    struct movie *NONNULL *NONNULL output,
+    size_t *NONNULL output_length,
+    message_t *NULLABLE restrict errmsg
+);
+
+[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2, 3, 4), gnu::hot]]
+/**
+ * List all movies with a given genre and run `callback` on each one. The caller is reponsible for calling `free` on
+ * each.
+ *
+ * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
+ * stores an error message there.
+ */
+db_result_t db_search_movies_by_genre(
+    db_conn_t *NONNULL conn,
+    const char genre[NONNULL restrict const],
+    struct movie *NONNULL *NONNULL output,
+    size_t *NONNULL output_length,
     message_t *NULLABLE restrict errmsg
 );
 
 [[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2, 3), gnu::hot]]
 /**
- * List all movies with a given genre and run `callback` on each one.
- *
- * Stops whenever the callback returns true.
- *
- * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
- stores an error message there.
- */
-db_result_t db_search_movies_by_genre(
-    db_conn_t *NONNULL conn,
-    const char genre[NONNULL restrict const],
-    bool callback(void *UNSPECIFIED data, struct movie movie),
-    void *NULLABLE callback_data,
-    message_t *NULLABLE restrict errmsg
-);
-
-[[nodiscard("hard errors cannot be ignored"), gnu::nonnull(1, 2), gnu::hot]]
-/**
- * List summaries of all movies in the database and run `callback` on each summary.
- *
- * Stops whenever the callback returns true.
+ * List summaries of all movies in the database and run `callback` on each summary. The caller is reponsible for calling
+ * `free` on it.
  *
  * Return `DB_SUCCESS` on success; otherwise, returns one of the `db_result` error codes and, if `errmsg` is provided,
- stores an error message there.
+ * stores an error message there.
  */
 db_result_t db_list_summaries(
     db_conn_t *NONNULL conn,
-    bool callback(void *UNSPECIFIED data, struct movie_summary summary),
-    void *NULLABLE callback_data,
+    struct movie_summary *NONNULL *NONNULL output,
+    size_t *NONNULL output_length,
     message_t *NULLABLE restrict errmsg
 );
 

@@ -310,58 +310,249 @@ bool movie_builder_add_genre(movie_builder_t *NONNULL builder, size_t len, const
     return true;
 }
 
-/** Dereference the current movie. */
-bool movie_builder_take_current_movie(movie_builder_t *NONNULL builder, struct movie *NONNULL output) {
-    assume(builder->has_id);
-    assume(builder->has_title);
-    assume(builder->has_director);
-    assume(builder->has_release_year);
-    assume(builder->has_genres);
-
-    size_t count;
-    const char *NONNULL *genres = movie_builder_take_current_genres(builder, &count);
-    if unlikely (genres == NULL) {
-        return false;
-    }
-
-    *output = (struct movie) {
-        .id = builder->current.movie_id,
-        .title = movie_builder_get_str(builder, builder->current.title_slice),
-        .director = movie_builder_get_str(builder, builder->current.director_slice),
-        .release_year = builder->current.release_year,
-        .genres = genres,
-        .genre_count = count,
-    };
-    return true;
-}
-
-/** Dereference the summary of the current movie. */
-void movie_builder_take_current_summary(movie_builder_t *NONNULL builder, struct movie_summary *NONNULL output) {
-    assume(builder->has_id);
-    assume(builder->has_title);
-
-    output->id = builder->current.movie_id;
-    output->title = movie_builder_get_str(builder, builder->current.title_slice);
-}
-
-/** Dereference the genre list of the current movie. */
-const char *NONNULL *NULLABLE
-    movie_builder_take_current_genres(movie_builder_t *NONNULL builder, size_t *NONNULL length) {
-    assume(builder->has_genres);
-
-    const size_t count = builder->current.genres_count;
+[[gnu::nonnull(1), gnu::hot, gnu::malloc]]
+/**
+ * Extract the genre list from a movie reference.
+ */
+static const char *NONNULL *NULLABLE
+    movie_builder_take_genres(const movie_builder_t *NONNULL builder, struct movie_ref ref) {
+    const size_t count = ref.genres_count;
     const char *NONNULL *output = (const char **) malloc(count * sizeof(char *));
     if unlikely (output == NULL) {
         return NULL;
     }
 
-    const char *genre = movie_builder_get_const_str(builder, builder->current.genres_slice);
+    const char *genre = movie_builder_get_const_str(builder, ref.genres_slice);
     for (size_t i = 0; i < count; i++) {
         output[i] = genre;
         // move to the next string in buffer
         genre += strlen(genre) + 1;
     }
 
-    *length = count;
+    return output;
+}
+
+[[gnu::nonnull(1, 3), gnu::hot]]
+/**
+ * Extract the movie from a reference.
+ */
+static bool movie_builder_take_movie(
+    const movie_builder_t *NONNULL builder,
+    struct movie_ref ref,
+    struct movie *NONNULL output
+) {
+    const char *NONNULL *genres = movie_builder_take_genres(builder, ref);
+    if unlikely (genres == NULL) {
+        return false;
+    }
+
+    *output = (struct movie) {
+        .id = ref.movie_id,
+        .title = movie_builder_get_const_str(builder, ref.title_slice),
+        .director = movie_builder_get_const_str(builder, ref.director_slice),
+        .release_year = ref.release_year,
+        .genres = genres,
+        .genre_count = ref.genres_count,
+    };
+    return true;
+}
+
+[[gnu::nonnull(1, 3), gnu::hot]]
+/**
+ * Extract the movie summary from a reference.
+ */
+static void movie_builder_take_summary(
+    const movie_builder_t *NONNULL builder,
+    struct movie_ref ref,
+    struct movie_summary *NONNULL output
+) {
+    *output = (struct movie_summary) {
+        .id = ref.movie_id,
+        .title = movie_builder_get_const_str(builder, ref.title_slice),
+    };
+}
+
+/** Dereference the current movie. */
+bool movie_builder_take_current_movie(const movie_builder_t *NONNULL builder, struct movie *NONNULL output) {
+    assume(builder->has_id);
+    assume(builder->has_title);
+    assume(builder->has_director);
+    assume(builder->has_release_year);
+    assume(builder->has_genres);
+
+    return movie_builder_take_movie(builder, builder->current, output);
+}
+
+/** Dereference the summary of the current movie. */
+void movie_builder_take_current_summary(const movie_builder_t *NONNULL builder, struct movie_summary *NONNULL output) {
+    assume(builder->has_id);
+    assume(builder->has_title);
+
+    movie_builder_take_summary(builder, builder->current, output);
+}
+
+/** Dereference the genre list of the current movie. */
+const char *NONNULL *NULLABLE
+    movie_builder_take_current_genres(const movie_builder_t *NONNULL builder, size_t *NONNULL length) {
+    assume(builder->has_genres);
+
+    const char *NONNULL *genres = movie_builder_take_genres(builder, builder->current);
+    if likely (genres != NULL) {
+        *length = builder->current.genres_count;
+    }
+    return genres;
+}
+
+[[gnu::nonnull(1)]]
+/**
+ * Reallocates the `movie_list` buffer to hold more `MOVIE_LIST_CAPACITY_STEP` items.
+ */
+static bool movie_builder_realloc_user_list(movie_builder_t *NONNULL builder) {
+    assume(builder->list_capacity == builder->list_size);
+    assume(builder->list_capacity % MOVIE_LIST_CAPACITY_STEP == 0);
+
+    const size_t current_capacity = builder->list_capacity;
+    size_t final_capacity;
+    if unlikely (ckd_add(&final_capacity, current_capacity, MOVIE_LIST_CAPACITY_STEP)) {
+        return false;
+    }
+
+    struct movie_ref *list = alloc_like(struct movie_ref, final_capacity);
+    if unlikely (list == NULL) {
+        return false;
+    }
+
+    memcpy(list, aligned_like(struct movie_ref, builder->movie_list), current_capacity * sizeof(struct movie_ref));
+    free(builder->movie_list);
+
+    builder->movie_list = list;
+    builder->list_capacity = final_capacity;
+    return true;
+}
+
+[[gnu::nonnull(1), gnu::hot]]
+/**
+ * Insert a reference in the `movie_list`.
+ *
+ * Returns `true` on success and `false` on allocation failures.
+ */
+static bool movie_build_add_to_list(movie_builder_t *NONNULL builder, struct movie_ref ref) {
+    assume(builder->list_capacity >= builder->list_size);
+    if unlikely (builder->list_capacity <= builder->list_size) {
+        bool ok = movie_builder_realloc_user_list(builder);
+        if unlikely (!ok) {
+            return false;
+        }
+    }
+
+    struct movie_ref *NONNULL list = aligned_like(struct movie_ref, builder->movie_list);
+    list[builder->list_size++] = ref;
+    return true;
+}
+
+/** Adds current build data as `struct movie` into the build list. */
+bool movie_builder_add_current_movie_to_list(movie_builder_t *NONNULL builder) {
+    assume(builder->has_id);
+    assume(builder->has_title);
+    assume(builder->has_director);
+    assume(builder->has_release_year);
+    assume(builder->has_genres);
+
+    bool ok = movie_build_add_to_list(builder, builder->current);
+    if unlikely (!ok) {
+        return false;
+    }
+
+    builder->has_id = false;
+    builder->has_title = false;
+    builder->has_director = false;
+    builder->has_release_year = false;
+    builder->has_genres = false;
+
+    return true;
+}
+
+/** Adds current build data as `struct movie_summary` into the build list. */
+bool movie_builder_add_current_summary_to_list(movie_builder_t *NONNULL builder) {
+    assume(builder->has_id);
+    assume(builder->has_title);
+    assume(!builder->has_director);
+    assume(!builder->has_release_year);
+    assume(!builder->has_genres);
+
+    struct movie_ref summary = {
+        .movie_id = builder->current.movie_id,
+        .title_slice = builder->current.title_slice,
+        .director_slice = SIZE_MAX,
+        .release_year = INT_MAX,
+        .genres_slice = SIZE_MAX,
+        .genres_count = SIZE_MAX,
+    };
+
+    bool ok = movie_build_add_to_list(builder, summary);
+    if unlikely (!ok) {
+        return false;
+    }
+
+    builder->has_id = false;
+    builder->has_title = false;
+
+    return true;
+}
+
+/** Current number of movies in list. */
+size_t movie_builder_list_size(const movie_builder_t *NONNULL builder) {
+    return builder->list_size;
+}
+
+/** Dereference the movie from the current list. */
+bool movie_builder_take_movie_from_list(
+    const movie_builder_t *NONNULL builder,
+    size_t idx,
+    struct movie *NONNULL output
+) {
+    assume(idx < builder->list_size);
+
+    return movie_builder_take_movie(builder, builder->movie_list[idx], output);
+}
+
+/** Dereference the entire list of movies. */
+struct movie *NULLABLE movie_builder_take_movie_list(const movie_builder_t *NONNULL builder, size_t *NONNULL count) {
+    const size_t list_size = builder->list_size;
+    const struct movie_ref *NONNULL refs = aligned_like(struct movie_ref, builder->movie_list);
+
+    struct movie *output = alloc_like(struct movie, list_size);
+    if unlikely (output == NULL) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < list_size; i++) {
+        bool ok = movie_builder_take_movie(builder, refs[i], &(output[i]));
+        if unlikely (!ok) {
+            *count = i;
+            return output;
+        }
+    }
+
+    *count = list_size;
+    return output;
+}
+
+/** Dereference the entire list of summaries. */
+struct movie_summary *NULLABLE
+    movie_builder_take_summary_list(const movie_builder_t *NONNULL builder, size_t *NONNULL count) {
+    const size_t list_size = builder->list_size;
+    const struct movie_ref *NONNULL refs = aligned_like(struct movie_ref, builder->movie_list);
+
+    struct movie_summary *output = alloc_like(struct movie_summary, list_size);
+    if unlikely (output == NULL) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < list_size; i++) {
+        movie_builder_take_summary(builder, refs[i], &(output[i]));
+    }
+
+    *count = list_size;
     return output;
 }
