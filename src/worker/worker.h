@@ -9,6 +9,7 @@
 #include "../defines.h"
 #include "./queue.h"
 
+[[gnu::leaf, gnu::nothrow]]
 unsigned cpu_count(void);
 
 [[gnu::nonnull(1, 2), gnu::nothrow]]

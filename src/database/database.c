@@ -52,27 +52,28 @@ static const char *NONNULL errmsg_dup(const char *NULLABLE error_message) {
     return copy;
 }
 
-[[gnu::cold]]
 /** Copies the current SQLite error message from `str` into `errmsg`, if non-NULL. */
-static void errmsg_dup_str(message_t *NULLABLE restrict errmsg, const char str[NULLABLE restrict]) {
+static inline void errmsg_dup_str(message_t *NULLABLE restrict errmsg, const char str[NULLABLE restrict]) {
     if likely (errmsg != NULL) {
         *errmsg = errmsg_dup(str);
     }
 }
 
-[[gnu::cold]]
 /** Copies the current SQLite error message from `db` into `errmsg`, if non-NULL. */
-static void errmsg_dup_db(message_t *NULLABLE errmsg, sqlite3 *NULLABLE db) {
-    errmsg_dup_str(errmsg, sqlite3_errmsg(db));
+static inline void errmsg_dup_db(message_t *NULLABLE errmsg, sqlite3 *NULLABLE db) {
+    if likely (errmsg != NULL) {
+        *errmsg = errmsg_dup(sqlite3_errmsg(db));
+    }
 }
 
-[[gnu::cold]]
 /** Copies the SQLite error string for the error code `rc` into `errmsg`, if non-NULL. */
-static void errmsg_dup_rc(message_t *NULLABLE errmsg, const int rc) {
-    errmsg_dup_str(errmsg, sqlite3_errstr(rc));
+static inline void errmsg_dup_rc(message_t *NULLABLE errmsg, const int rc) {
+    if likely (errmsg != NULL) {
+        *errmsg = errmsg_dup(sqlite3_errstr(rc));
+    }
 }
 
-[[gnu::nonnull(1, 2)]]
+[[gnu::cold, gnu::nonnull(1, 2)]]
 /** Builds a formatted error message for expected user errors. */
 static const char *NONNULL errmsg_vprintf(const char *NONNULL restrict format, va_list args) {
     constexpr size_t BUFSIZE = 128;
@@ -92,7 +93,7 @@ static const char *NONNULL errmsg_vprintf(const char *NONNULL restrict format, v
 
 [[gnu::format(printf, 2, 3), gnu::nonnull(2)]]
 /** Builds a formatted error message for expected user errors. */
-static void errmsg_printf(message_t *NULLABLE errmsg, const char *NONNULL restrict format, ...) {
+static inline void errmsg_printf(message_t *NULLABLE errmsg, const char *NONNULL restrict format, ...) {
     if likely (errmsg != NULL) {
         va_list args;
         va_start(args);
@@ -110,6 +111,7 @@ void db_free_errmsg(const char *NONNULL errmsg) {
     }
 }
 
+[[gnu::nonnull(1), gnu::cold]]
 /**
  * Closes an open SQLite3 database connection, free resources and set `errmsg`, if necessary.
  */
@@ -642,7 +644,7 @@ static db_result_t db_transaction_begin(db_conn_t *NONNULL conn, message_t *NULL
     return db_transaction_op(conn, conn->op_begin, errmsg);
 }
 
-[[gnu::nonnull(1)]]
+[[gnu::nonnull(1), gnu::hot]]
 /** Runs `ROLLBACK TRANSACTION`. */
 static db_result_t db_transaction_rollback(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     return db_transaction_op(conn, conn->op_rollback, errmsg);
@@ -742,7 +744,6 @@ db_result_t db_register_movie(
     struct movie *NONNULL movie,
     message_t *NULLABLE restrict errmsg
 ) {
-    assume(movie != NULL);
     assume(movie->id == 0);
 
     db_result_t res = db_transaction_begin(conn, errmsg);
@@ -802,8 +803,6 @@ static db_result_t add_genres_in_transaction(
 [[gnu::pure, gnu::nonnull(1)]]
 /** Calculate the size of a NULL terminated list of strings. */
 static size_t list_len(const char *NULLABLE const list[NONNULL]) {
-    assume(list != NULL);
-
     size_t len = 0;
     while (list[len] != NULL) {
         len++;

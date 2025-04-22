@@ -47,6 +47,7 @@ void db_free_errmsg(message_t errmsg);
   gnu::malloc,
   gnu::assume_aligned(ALIGNMENT_DB_CONN),
   gnu::nonnull(1),
+  gnu::cold,
   gnu::leaf,
   gnu::nothrow]]
 /**
@@ -60,7 +61,7 @@ void db_free_errmsg(message_t errmsg);
  */
 db_conn_t *NULLABLE db_connect(const char filepath[NONNULL restrict], message_t *NULLABLE restrict errmsg);
 
-[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
  * Closes an open database connection.
  *

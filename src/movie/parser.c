@@ -82,8 +82,6 @@ enum operation_ty parse_ty(const yaml_char_t *NONNULL key) {
  */
 [[nodiscard("useless call if discarded"), gnu::pure, gnu::nonnull(1)]]
 static size_t list_len(const char *NULLABLE const list[NONNULL]) {
-    assume(list != NULL);
-
     size_t len = 0;
     while (list[len] != NULL) {
         len++;
@@ -100,7 +98,7 @@ static size_t list_len(const char *NULLABLE const list[NONNULL]) {
  */
 [[nodiscard("uninitialized output if false")]]
 static bool parse_i64(const char *NONNULL str, int64_t *NONNULL out) {
-    if unlikely (str == NULL || str[0] == '\0') {
+    if unlikely (str[0] == '\0') {
         return false;
     }
 
@@ -137,7 +135,7 @@ enum [[gnu::packed]] current_key {
  * @return The associated enum value (e.g., TITLE_KEY), or OTHER_KEY if unknown.
  */
 [[nodiscard("useless call if discarded"), gnu::pure]]
-enum current_key parse_key(const yaml_char_t *NONNULL key) {
+static enum current_key parse_key(const yaml_char_t *NONNULL key) {
     if (streq(key, "id")) {
         return ID_KEY;
     } else if (streq(key, "title")) {

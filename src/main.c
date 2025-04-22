@@ -30,7 +30,6 @@ extern int main(void) {
         return EXIT_FAILURE;
     }
 
-    // initialize io_uring
     workq_t *queue = workq_create();
     if unlikely (!queue) {
         (void) fprintf(stderr, "workq_create: out of memory\n");

@@ -111,8 +111,6 @@ movie_builder_t *NULLABLE movie_builder_create(void) {
 
 /** Release memory used for builder. */
 void movie_builder_destroy(movie_builder_t *NONNULL builder) {
-    assume(builder != NULL);
-
     free(builder->movie_list);
     free(builder->str_data);
     free(builder);
@@ -120,8 +118,6 @@ void movie_builder_destroy(movie_builder_t *NONNULL builder) {
 
 /** Reset the buffer to no data a inital state. */
 void movie_builder_reset(movie_builder_t *NONNULL builder) {
-    assume(builder != NULL);
-
     builder->str_in_use = 0;
     builder->list_size = 0;
 
@@ -141,12 +137,11 @@ static inline size_t ceil_div(size_t a, size_t b) {
     return 1 + ((a - 1) / b);
 }
 
-[[gnu::nonnull(1), gnu::cold]]
+[[gnu::nonnull(1)]]
 /**
  * Reallocates the `str_data` buffer to hold `additional_size` more bytes.
  */
 static bool movie_builder_realloc_str_data(movie_builder_t *NONNULL builder, size_t additional_size) {
-    assume(builder != NULL);
     // assume that we don't already have capacity for `additional_size`
     assume(builder->str_capacity >= builder->str_in_use);
     assume(builder->str_capacity - builder->str_in_use < additional_size);
@@ -167,7 +162,7 @@ static bool movie_builder_realloc_str_data(movie_builder_t *NONNULL builder, siz
     memcpy(
         aligned_as(BUFFER_PAGE_SIZE, data),
         aligned_as(BUFFER_PAGE_SIZE, builder->str_data),
-        builder->str_capacity * BUFFER_PAGE_SIZE
+        builder->str_capacity * BUFFER_PAGE_SIZE * sizeof(char)
     );
     free(builder->str_data);
 
@@ -176,7 +171,7 @@ static bool movie_builder_realloc_str_data(movie_builder_t *NONNULL builder, siz
     return true;
 }
 
-[[gnu::nonnull(1, 3)]]
+[[gnu::nonnull(1, 3), gnu::hot]]
 /**
  * Request an allocated slice in string buffer for `size + 1` bytes.
  *
@@ -184,7 +179,6 @@ static bool movie_builder_realloc_str_data(movie_builder_t *NONNULL builder, siz
  * Otherwise, `false` is returned.
  */
 static bool movie_builder_slice(movie_builder_t *NONNULL builder, size_t size, size_t *NONNULL slice) {
-    assume(builder != NULL);
 
     assume(builder->str_capacity >= builder->str_in_use);
     if unlikely (size > builder->str_capacity - builder->str_in_use) {
@@ -199,10 +193,9 @@ static bool movie_builder_slice(movie_builder_t *NONNULL builder, size_t size, s
     return true;
 }
 
-[[gnu::pure, gnu::nonnull(1)]]
+[[gnu::pure, gnu::hot, gnu::nonnull(1)]]
 /** Derenference slice into a string pointer. */
 static inline char *NONNULL movie_builder_get_str(movie_builder_t *NONNULL builder, size_t slice) {
-    assume(builder != NULL);
     assume(slice <= builder->str_in_use);
 
     [[gnu::aligned(BUFFER_PAGE_SIZE)]]
@@ -211,10 +204,9 @@ static inline char *NONNULL movie_builder_get_str(movie_builder_t *NONNULL build
     return &(data[slice]);
 }
 
-[[gnu::pure, gnu::nonnull(1)]]
+[[gnu::pure, gnu::hot, gnu::nonnull(1)]]
 /** Derenference slice into a const string pointer. */
 static inline const char *NONNULL movie_builder_get_const_str(const movie_builder_t *NONNULL builder, size_t slice) {
-    assume(builder != NULL);
     assume(slice <= builder->str_in_use);
 
     [[gnu::aligned(BUFFER_PAGE_SIZE)]]
@@ -223,7 +215,7 @@ static inline const char *NONNULL movie_builder_get_const_str(const movie_builde
     return &(data[slice]);
 }
 
-[[gnu::nonnull(1, 3, 4)]]
+[[gnu::nonnull(1, 3, 4), gnu::hot]]
 /**
  * Insert a string `str` of length `len` into the buffer and write the allocated slice in `slice`.
  *
@@ -235,8 +227,6 @@ static bool movie_builder_add_string(
     const char str[NONNULL restrict len + 1],
     size_t *NONNULL slice
 ) {
-    assume(slice != NULL);
-    assume(str != NULL);
     assume(len == strlen(str));
 
     size_t idx;
@@ -252,7 +242,6 @@ static bool movie_builder_add_string(
 
 /* Set the identifier for the current movie. */
 void movie_builder_set_id(movie_builder_t *NONNULL builder, int64_t movie_id) {
-    assume(builder != NULL);
     assume(!builder->has_id);
 
     builder->current.movie_id = movie_id;
@@ -261,7 +250,6 @@ void movie_builder_set_id(movie_builder_t *NONNULL builder, int64_t movie_id) {
 
 /* Set the title for the current movie. */
 bool movie_builder_set_title(movie_builder_t *NONNULL builder, size_t len, const char title[NONNULL restrict len + 1]) {
-    assume(builder != NULL);
     assume(!builder->has_title);
 
     bool ok = movie_builder_add_string(builder, len, title, &(builder->current.title_slice));
@@ -279,7 +267,6 @@ bool movie_builder_set_director(
     size_t len,
     const char director[NONNULL restrict len + 1]
 ) {
-    assume(builder != NULL);
     assume(!builder->has_director);
 
     bool ok = movie_builder_add_string(builder, len, director, &(builder->current.director_slice));
@@ -293,7 +280,6 @@ bool movie_builder_set_director(
 
 /* Set the release year for the current movie. */
 void movie_builder_set_release_year(movie_builder_t *NONNULL builder, int release_year) {
-    assume(builder != NULL);
     assume(!builder->has_release_year);
 
     builder->current.release_year = release_year;
@@ -302,7 +288,6 @@ void movie_builder_set_release_year(movie_builder_t *NONNULL builder, int releas
 
 /* Start the genre list for the current movie. */
 void movie_builder_start_genres(movie_builder_t *NONNULL builder) {
-    assume(builder != NULL);
     assume(!builder->has_genres);
 
     builder->current.genres_slice = builder->str_in_use;
@@ -312,7 +297,6 @@ void movie_builder_start_genres(movie_builder_t *NONNULL builder) {
 
 /** Add genre to the current movie's genres list. */
 bool movie_builder_add_genre(movie_builder_t *NONNULL builder, size_t len, const char genre[NONNULL restrict len + 1]) {
-    assume(builder != NULL);
     assume(builder->has_genres);
 
     size_t idx;
@@ -328,7 +312,6 @@ bool movie_builder_add_genre(movie_builder_t *NONNULL builder, size_t len, const
 
 /** Dereference the current movie. */
 bool movie_builder_take_current_movie(movie_builder_t *NONNULL builder, struct movie *NONNULL output) {
-    assume(builder != NULL);
     assume(builder->has_id);
     assume(builder->has_title);
     assume(builder->has_director);
@@ -354,7 +337,6 @@ bool movie_builder_take_current_movie(movie_builder_t *NONNULL builder, struct m
 
 /** Dereference the summary of the current movie. */
 void movie_builder_take_current_summary(movie_builder_t *NONNULL builder, struct movie_summary *NONNULL output) {
-    assume(builder != NULL);
     assume(builder->has_id);
     assume(builder->has_title);
 
@@ -365,7 +347,6 @@ void movie_builder_take_current_summary(movie_builder_t *NONNULL builder, struct
 /** Dereference the genre list of the current movie. */
 const char *NONNULL *NULLABLE
     movie_builder_take_current_genres(movie_builder_t *NONNULL builder, size_t *NONNULL length) {
-    assume(builder != NULL);
     assume(builder->has_genres);
 
     const size_t count = builder->current.genres_count;

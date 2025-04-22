@@ -283,7 +283,7 @@ libyaml = subproject('libyaml',
 # # # # # # # # #
 # FINAL BINARY  #
 
-executable('main',
+main = executable('main',
     files(
         'src/main.c',
         'src/database/database.c',
@@ -299,4 +299,12 @@ executable('main',
     gnu_symbol_visibility: 'hidden',
     export_dynamic: false,
     dependencies: [sqlite3, libyaml, threads],
+)
+
+custom_target('disassembly',
+  input: main,
+  output: 'disassembly.s',
+  command: ['objdump', '-d', '-S', '--no-show-raw-insn', '--no-addresses', '@INPUT@'],
+  capture: true,
+  build_by_default: true
 )

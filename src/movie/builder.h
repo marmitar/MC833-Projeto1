@@ -11,12 +11,18 @@
 
 /** Optimal alignment for `movie_builder_t`. */
 #define ALIGNMENT_MOVIE_BUILDER 128
+
 /**
  * Internal buffer for movie output.
  */
 typedef struct movie_builder movie_builder_t [[gnu::aligned(ALIGNMENT_MOVIE_BUILDER)]];
 
-[[gnu::malloc, gnu::assume_aligned(ALIGNMENT_MOVIE_BUILDER), gnu::leaf, gnu::nothrow]]
+[[nodiscard("must be destroyed"),
+  gnu::malloc,
+  gnu::assume_aligned(ALIGNMENT_MOVIE_BUILDER),
+  gnu::cold,
+  gnu::leaf,
+  gnu::nothrow]]
 /**
  * Allocates initial memory for a reusable movie builder.
  *
@@ -24,13 +30,13 @@ typedef struct movie_builder movie_builder_t [[gnu::aligned(ALIGNMENT_MOVIE_BUIL
  */
 movie_builder_t *NULLABLE movie_builder_create(void);
 
-[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
 /**
  * Release memory used for buffer. Cannot be used again.
  */
 void movie_builder_destroy(movie_builder_t *NONNULL builder);
 
-[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Reset the internal state in the builder. All previous references cannot be used again.
  *
@@ -38,7 +44,7 @@ void movie_builder_destroy(movie_builder_t *NONNULL builder);
  */
 void movie_builder_reset(movie_builder_t *NONNULL builder);
 
-[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Set the identifier for the current movie.
  *
@@ -46,7 +52,7 @@ void movie_builder_reset(movie_builder_t *NONNULL builder);
  */
 void movie_builder_set_id(movie_builder_t *NONNULL builder, int64_t movie_id);
 
-[[gnu::nonnull(1, 3), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Set the title for the current movie.
  *
@@ -56,7 +62,7 @@ void movie_builder_set_id(movie_builder_t *NONNULL builder, int64_t movie_id);
  */
 bool movie_builder_set_title(movie_builder_t *NONNULL builder, size_t len, const char title[NONNULL restrict len + 1]);
 
-[[gnu::nonnull(1, 3), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Set the title for the current movie.
  *
@@ -70,7 +76,7 @@ bool movie_builder_set_director(
     const char director[NONNULL restrict len + 1]
 );
 
-[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Set the release year for the current movie.
  *
@@ -78,7 +84,7 @@ bool movie_builder_set_director(
  */
 void movie_builder_set_release_year(movie_builder_t *NONNULL builder, int release_year);
 
-[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Start the genre list for the current movie.
  *
@@ -86,7 +92,7 @@ void movie_builder_set_release_year(movie_builder_t *NONNULL builder, int releas
  */
 void movie_builder_start_genres(movie_builder_t *NONNULL builder);
 
-[[gnu::nonnull(1, 3), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Add genre to the current movie's genres list.
  *
@@ -96,7 +102,7 @@ void movie_builder_start_genres(movie_builder_t *NONNULL builder);
  */
 bool movie_builder_add_genre(movie_builder_t *NONNULL builder, size_t len, const char genre[NONNULL restrict len + 1]);
 
-[[gnu::nonnull(1, 2), gnu::leaf, gnu::nothrow]]
+[[nodiscard("output may be uninitialized"), gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Dereference the current movie.
  *
@@ -116,7 +122,7 @@ bool movie_builder_take_current_movie(movie_builder_t *NONNULL builder, struct m
  */
 void movie_builder_take_current_summary(movie_builder_t *NONNULL builder, struct movie_summary *NONNULL output);
 
-[[gnu::nonnull(1, 2), gnu::malloc, gnu::leaf, gnu::nothrow]]
+[[nodiscard("must be freed"), gnu::nonnull(1, 2), gnu::hot, gnu::malloc, gnu::leaf, gnu::nothrow]]
 /**
  * Dereference the genre list of the current movie.
  *
