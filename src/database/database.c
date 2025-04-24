@@ -1143,10 +1143,7 @@ db_result_t db_search_movies_by_genre(
 
 [[gnu::nonnull(1, 2)]]
 /** Build summary data using `buffer`. */
-static db_result_t get_summary_in_list(
-    movie_builder_t *NONNULL builder,
-    sqlite3_stmt *NONNULL stmt
-) {
+static db_result_t get_summary_in_list(movie_builder_t *NONNULL builder, sqlite3_stmt *NONNULL stmt) {
     size_t title_len;
     const int64_t id = sqlite3_column_int64(stmt, 0);
     const char *title = get_str_column(stmt, 1, &title_len);
@@ -1162,7 +1159,7 @@ static db_result_t get_summary_in_list(
     }
 
     ok = movie_builder_add_current_summary_to_list(builder);
-    if unlikely(!ok) {
+    if unlikely (!ok) {
         return DB_RUNTIME_ERROR;
     }
     return DB_SUCCESS;

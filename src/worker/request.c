@@ -11,8 +11,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <yaml.h>
-
 #include "../database/database.h"
 #include "../defines.h"
 #include "../movie/movie.h"
@@ -23,7 +21,7 @@
 #define hhu(code) ((unsigned char) (code))
 
 /** Response length. */
-#define RESP_LEN 1024
+#define RESP_LEN 2048
 
 [[nodiscard("hard errors cannot be ignored")]]
 /**
@@ -34,16 +32,10 @@
  *
  * @return true if DB_HARD_ERROR was encountered, false otherwise.
  */
-static bool handle_result(pthread_t id, int sock_fd, message_t errmsg, db_result_t result) {
-    if likely (result == DB_SUCCESS) {
-        char ok[] = "server: ok\n";
-        send(sock_fd, ok, strlen(ok), 0);
-        return false;
-    }
-
+static bool handle_result(pthread_t id, int sock_fd, const char *NULLABLE errmsg, db_result_t result) {
     if likely (errmsg != NULL) {
         char response[RESP_LEN];
-        (void) snprintf(response, sizeof(response), "server: %s\n", errmsg);
+        (void) snprintf(response, sizeof(response), "server: %s\n\n", errmsg);
         send(sock_fd, response, strlen(response), 0);
         (void) fprintf(stderr, "thread[%lu]: db error: %s\n", id, errmsg);
         db_free_errmsg(errmsg);
@@ -53,61 +45,85 @@ static bool handle_result(pthread_t id, int sock_fd, message_t errmsg, db_result
 }
 
 [[gnu::hot]]
+/** Sends ok to  */
+static void send_ok(int sock_fd) {
+    char ok[] = "server: ok\n\n";
+    send(sock_fd, ok, strlen(ok), 0);
+}
+
+[[gnu::hot]]
 /**
  * Sends textual movie data back to the client.
  *
  * Formats the fields of `movie` and writes them to the socket. Continues returning false so iteration can keep going,
  * unless you want to stop after the first record.
  */
-static void send_movie(int sock_fd, struct movie movie) {
+static void send_movie(int sock_fd, struct movie movie, bool in_list) {
     // Ideally, we should be a single in-memory buffer and send a single data to the client, as to
     // - not clog the SQLite database lock
     // - allow faster communication by the kernel
-    // - integrate better into uring
-    char msg[RESP_LEN] = "movie:\n";
+    // - allow proper uring integration
+    char msg[RESP_LEN] = "";
+    if (!in_list) {
+        (void) snprintf(msg, sizeof(msg), "movie:\n");
+        send(sock_fd, msg, strlen(msg), 0);
+    }
+
+    (void) snprintf(msg, sizeof(msg), "  %2sid: %" PRIi64 "\n", in_list ? "- " : "", movie.id);
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, sizeof(msg), "\tid: %" PRIi64 "\n", movie.id);
+    (void) snprintf(msg, sizeof(msg), "  %2stitle: %s\n", in_list ? "  " : "", movie.title);
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, sizeof(msg), "\ttitle: %s\n", movie.title);
+    (void) snprintf(msg, sizeof(msg), "  %2sreleased_year: %d\n", in_list ? "  " : "", movie.release_year);
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, sizeof(msg), "\treleased in: %d\n", movie.release_year);
+    (void) snprintf(msg, sizeof(msg), "  %2sdirector: %s\n", in_list ? "  " : "", movie.director);
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, sizeof(msg), "\tdirector: %s\n", movie.director);
-    send(sock_fd, msg, strlen(msg), 0);
+    if unlikely (movie.genre_count <= 0) {
+        (void) snprintf(msg, sizeof(msg), "  %2sgenres: []\n", in_list ? "  " : "");
+        send(sock_fd, msg, strlen(msg), 0);
+    } else {
+        (void) snprintf(msg, sizeof(msg), "  %2sgenres:\n", in_list ? "  " : "");
+        send(sock_fd, msg, strlen(msg), 0);
+    }
     for (size_t i = 0; i < movie.genre_count; i++) {
-        (void) snprintf(msg, sizeof(msg), "\tgenre[%zu]: %s\n", i, movie.genres[i]);
+        (void) snprintf(msg, sizeof(msg), "  %2s  - %s\n", in_list ? "  " : "", movie.genres[i]);
         send(sock_fd, msg, strlen(msg), 0);
     }
     send(sock_fd, "\n", strlen("\n"), 0);
     free_movie(movie);
 }
 
-[[gnu::hot]]
-/**
- * Sends a single-line summary (id + title) of a movie to the client.
- *
- * @return false to keep listing.
- */
-static void send_summary(int sock_fd, const struct movie_summary summary) {
-    char msg[RESP_LEN];
-    (void) snprintf(msg, sizeof(msg), "movie[id=%" PRIi64 "]: %s\n", summary.id, summary.title);
-    send(sock_fd, msg, strlen(msg), 0);
-}
-
+[[gnu::hot, gnu::nonnull(3, 4)]]
 /** Sends multiple movies at once. */
-static void send_movie_list(int sock_fd, size_t count, struct movie movie[NONNULL count]) {
+static void send_movie_list(int sock_fd, size_t count, struct movie movie[NONNULL count], const char *NONNULL key) {
+    char msg[RESP_LEN] = "";
+    (void) snprintf(msg, sizeof(msg), "---\n%s:\n\n", key);
+    send(sock_fd, msg, strlen(msg), 0);
+
     for (size_t i = 0; i < count; i++) {
-        send_movie(sock_fd, movie[i]);
+        send_movie(sock_fd, movie[i], true);
     }
     free(movie);
+
+    const char END_DOCUMENT[] = "...\n";
+    send(sock_fd, END_DOCUMENT, strlen(END_DOCUMENT), 0);
 }
 
+[[gnu::hot, gnu::nonnull(3)]]
 /** Sends multiple summaries at once. */
 static void send_summary_list(int sock_fd, size_t count, struct movie_summary summary[NONNULL count]) {
+    char msg[RESP_LEN] = "";
+    (void) snprintf(msg, sizeof(msg), "---\n%s:\n", "summaries");
+    send(sock_fd, msg, strlen(msg), 0);
+
     for (size_t i = 0; i < count; i++) {
-        send_summary(sock_fd, summary[i]);
+        char msg[RESP_LEN];
+        (void) snprintf(msg, sizeof(msg), "  - { id: %" PRIi64 ", title: '%s' }\n", summary[i].id, summary[i].title);
+        send(sock_fd, msg, strlen(msg), 0);
     }
     free(summary);
+
+    const char END_DOCUMENT[] = "...\n";
+    send(sock_fd, END_DOCUMENT, strlen(END_DOCUMENT), 0);
 }
 
 /** Length for an IP text representation. */
@@ -158,38 +174,25 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
     const pthread_t id = pthread_self();
     (void) fprintf(stderr, "thread[%lu]: handling socket %d, peer ip %s\n", id, sock_fd, get_peer_ip(sock_fd).ip);
 
-    yaml_parser_t parser;
-    bool ok = parser_start(&parser, sock_fd);
-    if unlikely (!ok) {
-        const char msg[] = "server: failed to create YAML parser\n";
+    parser_t *parser = parser_create(sock_fd);
+    if unlikely (parser == NULL) {
+        const char msg[] = "server: failed to create YAML parser\n\n";
         send(sock_fd, msg, strlen(msg), 0);
         close(sock_fd);
         return false;
     }
 
-    bool stop = false;
     bool hard_fail = false;
-
-    bool in_mapping = false;
-    while (!stop && !hard_fail) {
-        struct operation op = parser_next_op(&parser, &in_mapping);
-        if (op.ty == INVALID_OP) {
-            // end or parse error => just stop
-            stop = true;
-            (void) fprintf(
-                stderr,
-                "thread[%lu]: op.ty=%hhu, stop=%hhu, hard_fail=%hhu\n",
-                id,
-                hhu(op.ty),
-                hhu(stop),
-                hhu(hard_fail)
-            );
-            continue;
-        }
+    while (!parser_finished(parser) && !hard_fail) {
+        struct operation op = parser_next_op(parser);
 
         const char *errmsg = NULL;
         db_result_t result;
         switch (op.ty) {
+            case PARSE_DONE:
+                result = DB_SUCCESS;
+                break;
+
             case ADD_MOVIE: {
                 char response[RESP_LEN] = "\n";
                 (void) snprintf(
@@ -201,10 +204,12 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                     op.movie.director
                 );
                 send(sock_fd, response, strlen(response), 0);
-                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_register_movie(db, &(op.movie), &errmsg);
-                free_movie_and_strings(op.movie);
+                free_movie(op.movie);
+                if likely (result == DB_SUCCESS) {
+                    send_ok(sock_fd);
+                }
                 break;
             }
             case ADD_GENRE: {
@@ -217,10 +222,11 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                     op.key.movie_id
                 );
                 send(sock_fd, response, strlen(response), 0);
-                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_add_genre(db, op.key.movie_id, op.key.genre, &errmsg);
-                free(op.key.genre);
+                if likely (result == DB_SUCCESS) {
+                    send_ok(sock_fd);
+                }
                 break;
             }
             case REMOVE_MOVIE: {
@@ -232,10 +238,11 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                     op.key.movie_id
                 );
                 send(sock_fd, response, strlen(response), 0);
-                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 result = db_delete_movie(db, op.key.movie_id, &errmsg);
-                free(op.key.genre);
+                if likely (result == DB_SUCCESS) {
+                    send_ok(sock_fd);
+                }
                 break;
             }
             case GET_MOVIE: {
@@ -247,25 +254,23 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                     op.key.movie_id
                 );
                 send(sock_fd, response, strlen(response), 0);
-                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 struct movie movie;
                 result = db_get_movie(db, op.key.movie_id, &movie, &errmsg);
                 if likely (result == DB_SUCCESS) {
-                    send_movie(sock_fd, movie);
+                    send_movie(sock_fd, movie, false);
                 }
                 break;
             }
             case LIST_MOVIES: {
                 char response[RESP_LEN] = "server: received LIST_MOVIES\n";
                 send(sock_fd, response, strlen(response), 0);
-                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 size_t list_size;
                 struct movie *list;
                 result = db_list_movies(db, &list, &list_size, &errmsg);
                 if likely (result == DB_SUCCESS) {
-                    send_movie_list(sock_fd, list_size, list);
+                    send_movie_list(sock_fd, list_size, list, "movies");
                 }
                 break;
             }
@@ -273,22 +278,19 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 char response[RESP_LEN] = "\n";
                 (void) snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
                 send(sock_fd, response, strlen(response), 0);
-                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 size_t list_size;
                 struct movie *list;
                 result = db_search_movies_by_genre(db, op.key.genre, &list, &list_size, &errmsg);
-                free(op.key.genre);
                 if likely (result == DB_SUCCESS) {
-                    send_movie_list(sock_fd, list_size, list);
+                    send_movie_list(sock_fd, list_size, list, "selected_movies");
                 }
                 break;
             }
             case LIST_SUMMARIES: {
                 char response[RESP_LEN] = "\n";
-                (void) snprintf(response, sizeof(response), "server: received SEARCH_BY_GENRE: %s\n", op.key.genre);
+                (void) snprintf(response, sizeof(response), "server: received LIST_SUMMARIES: %s\n", op.key.genre);
                 send(sock_fd, response, strlen(response), 0);
-                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
 
                 size_t list_size;
                 struct movie_summary *list;
@@ -298,13 +300,19 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
                 }
                 break;
             }
-            case INVALID_OP:
-            default: {
-                const char response[RESP_LEN] = "server: received an unknown operation, stopping communication\n";
+            case PARSE_ERROR:
+                char response[RESP_LEN] = "\n";
+                (void) snprintf(response, sizeof(response), "server: parsing error: %s\n\n", op.error_message);
                 send(sock_fd, response, strlen(response), 0);
-                (void) fprintf(stderr, "thread[%lu]: %s", id, response);
+
                 result = DB_SUCCESS;
-                stop = true;
+                break;
+
+            default: {
+                const char response[RESP_LEN] = "server: unexpected error\n\n";
+                send(sock_fd, response, strlen(response), 0);
+
+                result = DB_SUCCESS;
                 break;
             }
         }
@@ -312,16 +320,16 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
         hard_fail = handle_result(id, sock_fd, errmsg, result);
         (void) fprintf(
             stderr,
-            "thread[%lu]: op.ty=%hhu, stop=%hhu, hard_fail=%hhu, result=%hhu\n",
+            "thread[%lu]: op.ty=%hhu, finished=%hhu, hard_fail=%hhu, result=%hhu\n",
             id,
             hhu(op.ty),
-            hhu(stop),
+            hhu(parser_finished(parser)),
             hhu(hard_fail),
             hhu(result)
         );
     }
 
-    yaml_parser_delete(&parser);
+    parser_destroy(parser);
     close(sock_fd);
     return !hard_fail;
 }

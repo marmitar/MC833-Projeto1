@@ -40,22 +40,7 @@ static_assert(sizeof(struct movie_summary) == 2 * sizeof(int64_t));
 
 /** Free a single movie. Shared strings not deallocated. */
 static inline void free_movie(struct movie movie) {
-    assume(movie.genres != NULL);
     free((void *) movie.genres);
-}
-
-/** Free a single movie. Custom strings deallocated. */
-static inline void free_movie_and_strings(struct movie movie) {
-    assume(movie.title != NULL);
-    assume(movie.director != NULL);
-    assume(movie.genres != NULL);
-
-    for (size_t i = 0; i < movie.genre_count; i++) {
-        free((char *) movie.genres[i]);
-    }
-    free((void *) movie.genres);
-    free((void *) movie.title);
-    free((void *) movie.director);
 }
 
 #endif  // SRC_MOVIE_H

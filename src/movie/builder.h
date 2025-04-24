@@ -20,7 +20,6 @@ typedef struct movie_builder movie_builder_t [[gnu::aligned(ALIGNMENT_MOVIE_BUIL
 [[nodiscard("must be destroyed"),
   gnu::malloc,
   gnu::assume_aligned(ALIGNMENT_MOVIE_BUILDER),
-  gnu::cold,
   gnu::leaf,
   gnu::nothrow]]
 /**
@@ -30,7 +29,7 @@ typedef struct movie_builder movie_builder_t [[gnu::aligned(ALIGNMENT_MOVIE_BUIL
  */
 movie_builder_t *NULLABLE movie_builder_create(void);
 
-[[gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**
  * Release memory used for buffer. Cannot be used again.
  */
@@ -43,6 +42,36 @@ void movie_builder_destroy(movie_builder_t *NONNULL builder);
  * This does not deallocates memory, just resets counters, so the memory can be reused.
  */
 void movie_builder_reset(movie_builder_t *NONNULL builder);
+
+[[gnu::nonnull(1), gnu::hot, gnu::pure, gnu::leaf, gnu::nothrow]]
+/**
+ * Check if `movie_id` is already set for the current movie.
+ */
+bool movie_builder_has_id(const movie_builder_t *NONNULL builder);
+
+[[gnu::nonnull(1), gnu::hot, gnu::pure, gnu::leaf, gnu::nothrow]]
+/**
+ * Check if `title` is already set for the current movie.
+ */
+bool movie_builder_has_title(const movie_builder_t *NONNULL builder);
+
+[[gnu::nonnull(1), gnu::hot, gnu::pure, gnu::leaf, gnu::nothrow]]
+/**
+ * Check if `title` is already set for the current movie.
+ */
+bool movie_builder_has_director(const movie_builder_t *NONNULL builder);
+
+[[gnu::nonnull(1), gnu::hot, gnu::pure, gnu::leaf, gnu::nothrow]]
+/**
+ * Check if `title` is already set for the current movie.
+ */
+bool movie_builder_has_release_year(const movie_builder_t *NONNULL builder);
+
+[[gnu::nonnull(1), gnu::hot, gnu::pure, gnu::leaf, gnu::nothrow]]
+/**
+ * Check if `title` is already set for the current movie.
+ */
+bool movie_builder_has_genres(const movie_builder_t *NONNULL builder);
 
 [[gnu::nonnull(1), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**

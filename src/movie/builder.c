@@ -94,7 +94,7 @@ movie_builder_t *NULLABLE movie_builder_create(void) {
         return NULL;
     }
 
-    struct movie_ref *list = alloc_like(struct movie_ref, MOVIE_LIST_CAPACITY_STEP);
+    struct movie_ref *list = alloc_like(struct movie_ref, 0);
     if unlikely (list == NULL) {
         free(data);
         free(builder);
@@ -105,7 +105,7 @@ movie_builder_t *NULLABLE movie_builder_create(void) {
     builder->str_capacity = BUFFER_PAGE_SIZE;
 
     builder->movie_list = list;
-    builder->list_capacity = MOVIE_LIST_CAPACITY_STEP;
+    builder->list_capacity = 0;
     return builder;
 }
 
@@ -126,6 +126,31 @@ void movie_builder_reset(movie_builder_t *NONNULL builder) {
     builder->has_director = false;
     builder->has_release_year = false;
     builder->has_genres = false;
+}
+
+/** Check if `movie_id` is already set for the current movie. */
+bool movie_builder_has_id(const movie_builder_t *NONNULL builder) {
+    return builder->has_id;
+}
+
+/** Check if `title` is already set for the current movie. */
+bool movie_builder_has_title(const movie_builder_t *NONNULL builder) {
+    return builder->has_title;
+}
+
+/** Check if `title` is already set for the current movie. */
+bool movie_builder_has_director(const movie_builder_t *NONNULL builder) {
+    return builder->has_director;
+}
+
+/** Check if `title` is already set for the current movie. */
+bool movie_builder_has_release_year(const movie_builder_t *NONNULL builder) {
+    return builder->has_release_year;
+}
+
+/** Check if `title` is already set for the current movie. */
+bool movie_builder_has_genres(const movie_builder_t *NONNULL builder) {
+    return builder->has_genres;
 }
 
 [[gnu::const]]
@@ -178,7 +203,7 @@ static bool movie_builder_realloc_str_data(movie_builder_t *NONNULL builder, siz
  * Returns `true` if the operation was completed successfully, and the requested slice index is written to `slice`.
  * Otherwise, `false` is returned.
  */
-static bool movie_builder_slice(movie_builder_t *NONNULL builder, size_t size, size_t *NONNULL slice) {
+static bool movie_builder_create_slice(movie_builder_t *NONNULL builder, size_t size, size_t *NONNULL slice) {
 
     assume(builder->str_capacity >= builder->str_in_use);
     if unlikely (size > builder->str_capacity - builder->str_in_use) {
@@ -230,7 +255,7 @@ static bool movie_builder_add_string(
     assume(len == strlen(str));
 
     size_t idx;
-    bool ok = movie_builder_slice(builder, len + 1, &idx);
+    bool ok = movie_builder_create_slice(builder, len + 1, &idx);
     if unlikely (!ok) {
         return false;
     }
@@ -407,7 +432,7 @@ const char *NONNULL *NULLABLE
 /**
  * Reallocates the `movie_list` buffer to hold more `MOVIE_LIST_CAPACITY_STEP` items.
  */
-static bool movie_builder_realloc_user_list(movie_builder_t *NONNULL builder) {
+static bool movie_builder_realloc_movie_list(movie_builder_t *NONNULL builder) {
     assume(builder->list_capacity == builder->list_size);
     assume(builder->list_capacity % MOVIE_LIST_CAPACITY_STEP == 0);
 
@@ -439,7 +464,7 @@ static bool movie_builder_realloc_user_list(movie_builder_t *NONNULL builder) {
 static bool movie_build_add_to_list(movie_builder_t *NONNULL builder, struct movie_ref ref) {
     assume(builder->list_capacity >= builder->list_size);
     if unlikely (builder->list_capacity <= builder->list_size) {
-        bool ok = movie_builder_realloc_user_list(builder);
+        bool ok = movie_builder_realloc_movie_list(builder);
         if unlikely (!ok) {
             return false;
         }
