@@ -4,44 +4,23 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <bits/pthreadtypes.h>
 #include <bits/types/struct_timeval.h>
 #include <netinet/in.h>
-#include <pthread.h>
 #include <sys/socket.h>
 
-#include "./alloc.h"
 #include "./database/database.h"
 #include "./defines.h"
-#include "./worker/queue.h"
 #include "./worker/worker.h"
 
-static constexpr const uint16_t PORT = 12'345;
-static constexpr const int BACKLOG = 5;
-static constexpr const struct timeval SOCKET_TIMEOUT = {.tv_sec = 60, .tv_usec = 0};
+static int start_server(void) {
+    static constexpr const uint16_t PORT = 12'345;
+    static constexpr const int BACKLOG = 5;
+    static constexpr const struct timeval SOCKET_TIMEOUT = {.tv_sec = 60, .tv_usec = 0};
 
-extern int main(void) {
-    // initialize sqlite
-    const char *errmsg = NULL;
-    bool setup_ok = db_setup(DATABASE, &errmsg);
-    if unlikely (!setup_ok) {
-        (void) fprintf(stderr, "db_setup: %s\n", errmsg);
-        db_free_errmsg(errmsg);
-        return EXIT_FAILURE;
-    }
-
-    workq_t *queue = workq_create();
-    if unlikely (!queue) {
-        (void) fprintf(stderr, "workq_create: out of memory\n");
-        return EXIT_FAILURE;
-    }
-
-    // initialize socket
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if unlikely (server_fd < 0) {
         perror("socket");
-        workq_destroy(queue);
-        return EXIT_FAILURE;
+        return -1;
     }
 
     int yes = 1;
@@ -62,32 +41,40 @@ extern int main(void) {
     if unlikely (bind(server_fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
         perror("bind");
         close(server_fd);
-        workq_destroy(queue);
-        return EXIT_FAILURE;
+        return -1;
     }
     if unlikely (listen(server_fd, BACKLOG) < 0) {
         perror("listen");
         close(server_fd);
-        workq_destroy(queue);
-        return EXIT_FAILURE;
+        return -1;
     }
 
     printf("server listening on port %d\n", PORT);
+    return server_fd;
+}
 
-    const unsigned n = cpu_count();
-    pthread_t *workers = alloc_like(pthread_t, n);
-    if unlikely (workers == NULL) {
-        perror("malloc");
-        close(server_fd);
-        workq_destroy(queue);
+extern int main(void) {
+    // initialize sqlite
+    const char *errmsg = NULL;
+    bool setup_ok = db_setup(DATABASE, &errmsg);
+    if unlikely (!setup_ok) {
+        (void) fprintf(stderr, "db_setup: %s\n", errmsg);
+        db_free_errmsg(errmsg);
         return EXIT_FAILURE;
     }
 
-    for (unsigned i = 0; i < n; i++) {
-        bool ok = start_worker(&(workers[i]), queue);
-        if unlikely (!ok) {
-            workers[i] = pthread_self();
-        }
+    // initialize worker threads
+    workers_t *workers = workers_start();
+    if unlikely (workers == NULL) {
+        perror("workers_start");
+        return EXIT_FAILURE;
+    }
+
+    // initialize socket
+    int server_fd = start_server();
+    if unlikely (server_fd < 0) {
+        workers_stop(workers);
+        return EXIT_FAILURE;
     }
 
     // start accepting
@@ -99,22 +86,15 @@ extern int main(void) {
             continue;
         }
 
-        bool ok = workq_push(queue, client_fd);
+        bool ok = workers_add_work(workers, client_fd);
         if unlikely (!ok) {
             close(client_fd);
-            (void) fprintf(stderr, "workq_push: full, stopping the server\n");
+            (void) fprintf(stderr, "workers_add_work: no worker thread to handle request\n");
             break;
         }
     }
 
-    for (unsigned i = 0; i < n; i++) {
-        if likely (workers[i] != pthread_self()) {
-            // FIXME: signal the workers
-            pthread_join(workers[i], NULL);
-        }
-    }
-
     close(server_fd);
-    workq_destroy(queue);
+    workers_stop(workers);
     return EXIT_SUCCESS;
 }

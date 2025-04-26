@@ -15,7 +15,7 @@
 #define CACHE_LINE_SIZE 64
 
 /** Maximum number of items that can be in the queue at a single time. */
-#define WORK_QUEUE_CAPACITY 128
+#define WORK_QUEUE_CAPACITY 256
 
 /**
  * An opaque handle to the concurrent work queue.

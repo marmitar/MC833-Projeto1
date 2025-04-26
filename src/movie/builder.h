@@ -17,11 +17,7 @@
  */
 typedef struct movie_builder movie_builder_t [[gnu::aligned(ALIGNMENT_MOVIE_BUILDER)]];
 
-[[nodiscard("must be destroyed"),
-  gnu::malloc,
-  gnu::assume_aligned(ALIGNMENT_MOVIE_BUILDER),
-  gnu::leaf,
-  gnu::nothrow]]
+[[nodiscard("must be destroyed"), gnu::malloc, gnu::assume_aligned(ALIGNMENT_MOVIE_BUILDER), gnu::leaf, gnu::nothrow]]
 /**
  * Allocates initial memory for a reusable movie builder.
  *

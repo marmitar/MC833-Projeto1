@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include <arpa/inet.h>
-#include <bits/pthreadtypes.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <sys/socket.h>
@@ -32,7 +31,7 @@
  *
  * @return true if DB_HARD_ERROR was encountered, false otherwise.
  */
-static bool handle_result(pthread_t id, int sock_fd, const char *NULLABLE errmsg, db_result_t result) {
+static bool handle_result(unsigned long id, int sock_fd, const char *NULLABLE errmsg, db_result_t result) {
     if likely (errmsg != NULL) {
         char response[RESP_LEN];
         (void) snprintf(response, sizeof(response), "server: %s\n\n", errmsg);
@@ -171,7 +170,7 @@ static struct ip_string get_peer_ip(int sock_fd) {
  * @return true if request was handled successfully, or false if a hard error was encountered (server might stop).
  */
 bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
-    const pthread_t id = pthread_self();
+    const unsigned long id = pthread_self();
     (void) fprintf(stderr, "thread[%lu]: handling socket %d, peer ip %s\n", id, sock_fd, get_peer_ip(sock_fd).ip);
 
     parser_t *parser = parser_create(sock_fd);
