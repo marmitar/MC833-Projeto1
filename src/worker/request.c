@@ -1,12 +1,12 @@
 #include <assert.h>
 #include <inttypes.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <pthread.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -36,7 +36,7 @@ static bool handle_result(unsigned long id, int sock_fd, const char *NULLABLE er
         char response[RESP_LEN];
         (void) snprintf(response, sizeof(response), "server: %s\n\n", errmsg);
         send(sock_fd, response, strlen(response), 0);
-        (void) fprintf(stderr, "thread[%lu]: db error: %s\n", id, errmsg);
+        (void) fprintf(stderr, "worker[%zu]: db error: %s\n", id, errmsg);
         db_free_errmsg(errmsg);
     }
 
@@ -169,11 +169,10 @@ static struct ip_string get_peer_ip(int sock_fd) {
  * @param db      A non-null pointer to the database connection.
  * @return true if request was handled successfully, or false if a hard error was encountered (server might stop).
  */
-bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
-    const unsigned long id = pthread_self();
-    (void) fprintf(stderr, "thread[%lu]: handling socket %d, peer ip %s\n", id, sock_fd, get_peer_ip(sock_fd).ip);
+bool handle_request(size_t id, int sock_fd, db_conn_t *NONNULL db, atomic_bool *NONNULL shutdown_requested) {
+    (void) fprintf(stderr, "worker[%zu]: handling socket %d, peer ip %s\n", id, sock_fd, get_peer_ip(sock_fd).ip);
 
-    parser_t *parser = parser_create(sock_fd);
+    parser_t *parser = parser_create(shutdown_requested, sock_fd);
     if unlikely (parser == NULL) {
         const char msg[] = "server: failed to create YAML parser\n\n";
         send(sock_fd, msg, strlen(msg), 0);
@@ -319,7 +318,7 @@ bool handle_request(int sock_fd, db_conn_t *NONNULL db) {
         hard_fail = handle_result(id, sock_fd, errmsg, result);
         (void) fprintf(
             stderr,
-            "thread[%lu]: op.ty=%hhu, finished=%hhu, hard_fail=%hhu, result=%hhu\n",
+            "worker[%zu]: op.ty=%hhu, finished=%hhu, hard_fail=%hhu, result=%hhu\n",
             id,
             hhu(op.ty),
             hhu(parser_finished(parser)),

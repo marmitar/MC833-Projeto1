@@ -184,7 +184,7 @@ void workq_destroy(workq_t *NONNULL queue) {
  */
 static bool workq_mutex_lock(workq_t *NONNULL queue) {
     int rv = pthread_mutex_lock(&(queue->item_added_mtx));
-    if unlikely (rv == EOWNERDEAD) {
+    if unlikely (rv == EOWNERDEAD || errno == EOWNERDEAD) {
         rv = pthread_mutex_consistent(&(queue->item_added_mtx));
     }
     return likely(rv == 0);
@@ -196,15 +196,28 @@ static bool workq_mutex_lock(workq_t *NONNULL queue) {
  *
  * Returns false on errors.
  */
-static bool workq_signal_item_added(workq_t *NONNULL queue) {
+static bool workq_awake_workers(workq_t *NONNULL queue, bool broadcast) {
     bool ok = workq_mutex_lock(queue);
     if unlikely (!ok) {
         return false;
     }
 
-    int rv0 = pthread_cond_signal(&(queue->item_added_cond));
+    int saved_errno = 0;
+    int rv0 = 0;
+    if unlikely (broadcast) {
+        rv0 = pthread_cond_broadcast(&(queue->item_added_cond));
+    } else {
+        rv0 = pthread_cond_signal(&(queue->item_added_cond));
+    }
+    saved_errno = errno;
     int rv1 = pthread_mutex_unlock(&(queue->item_added_mtx));
-    return likely(rv0 == 0 && rv1 == 0);
+    if unlikely (rv0 != 0) {
+        errno = saved_errno;
+        return false;
+    } else if unlikely (rv1 != 0) {
+        return false;
+    }
+    return true;
 }
 
 [[nodiscard("useless call if discarded"), gnu::const]]
@@ -239,7 +252,9 @@ bool workq_push(workq_t *NONNULL queue, work_item item) {
         head = atomic_load_explicit(&(queue->head), memory_order_acquire);
         if unlikely (workq_size(head, tail) >= WORK_QUEUE_CAPACITY) {
             assert(workq_size(head, tail) == WORK_QUEUE_CAPACITY);
-            return false;  // actually full
+            // actually full, wake up threads to work on it
+            workq_awake_workers(queue, true);
+            return false;
         }
     }
 
@@ -257,7 +272,15 @@ bool workq_push(workq_t *NONNULL queue, work_item item) {
     assert(ok);
 
     assert(workq_size(head, tail) <= WORK_QUEUE_CAPACITY);
-    return likely(ok) && workq_signal_item_added(queue);
+    return likely(ok) && workq_awake_workers(queue, false);
+}
+
+/** Clears the work queue for shutdown. */
+bool workq_clear(workq_t *NONNULL queue) {
+    uint_fast64_t tail = atomic_load(&(queue->tail));
+    atomic_store(&(queue->head), tail);
+    // signal thread to stop waiting and start shutdown
+    return workq_awake_workers(queue, true);
 }
 
 /** Lock-free pop. Returns `false` on empty. */
@@ -320,21 +343,29 @@ static bool is_empty(const workq_t *NONNULL queue) {
 /**
  * Block current thread until there is an item to be taken in the work queue.
  */
-bool workq_wait_not_empty(workq_t *NONNULL queue) {
+bool workq_wait_not_empty(workq_t *NONNULL queue, atomic_bool *NONNULL stop_condition) {
     bool ok = workq_mutex_lock(queue);
     if unlikely (!ok) {
         return false;
     }
 
     int rv0 = 0;
-    while (unlikely(is_empty(queue))) {
+    int saved_errno = 0;
+    while (unlikely(is_empty(queue)) && unlikely(!atomic_load(stop_condition))) {
         rv0 = pthread_cond_wait(&(queue->item_added_cond), &(queue->item_added_mtx));
         if unlikely (rv0 != 0) {
+            saved_errno = errno;
             break;
         }
     }
 
     // always unlock the mutex, even if `pthread_cond_wait` failed
     int rv1 = pthread_mutex_unlock(&(queue->item_added_mtx));
-    return likely(rv0 == 0) && likely(rv1 == 0);
+    if unlikely (rv0 != 0) {
+        errno = saved_errno;
+        return false;
+    } else if unlikely (rv1 != 0) {
+        return false;
+    }
+    return true;
 }

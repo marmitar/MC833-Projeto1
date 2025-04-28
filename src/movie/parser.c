@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -36,6 +37,8 @@ struct [[gnu::aligned(ALIGNMENT_OPERATION_PARSER)]] operation_parser {
     char *NULLABLE error_message;
     /** Allocated size for `error_message`. */
     size_t error_message_capacity;
+    /** If main thread request to stop work. */
+    atomic_bool *NONNULL shutdown_requested;
 };
 
 [[gnu::nonnull(1, 2, 4), gnu::hot]]
@@ -63,7 +66,7 @@ static int sock_read_handler(
 }
 
 /** Initializes YAML parser.  */
-parser_t *NULLABLE parser_create(const int sock_fd) {
+parser_t *NULLABLE parser_create(atomic_bool *NONNULL shutdown_requested, const int sock_fd) {
     movie_builder_t *builder = movie_builder_create();
     if unlikely (builder == NULL) {
         return NULL;
@@ -87,6 +90,7 @@ parser_t *NULLABLE parser_create(const int sock_fd) {
     parser->builder = builder;
     parser->error_message = NULL;
     parser->error_message_capacity = 0;
+    parser->shutdown_requested = shutdown_requested;
 
     parser->socket = sock_fd;
     yaml_parser_set_encoding(&(parser->yaml), YAML_UTF8_ENCODING);
@@ -107,7 +111,7 @@ void parser_destroy(parser_t *NONNULL parser) {
 
 /** Check if input stream already ended. */
 bool parser_finished(const parser_t *NONNULL parser) {
-    return unlikely(parser->done);
+    return unlikely(parser->done) || unlikely(atomic_load(parser->shutdown_requested));
 }
 
 [[gnu::hot, gnu::nonnull(1)]]

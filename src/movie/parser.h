@@ -2,6 +2,7 @@
 /** Database operation parser. */
 #define SRC_WORKER_PARSER_H
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -63,7 +64,7 @@ typedef struct operation_parser parser_t [[gnu::aligned(ALIGNMENT_OPERATION_PARS
  *
  * @return the parser on success, or `NULL` on allocation failures.
  */
-parser_t *NULLABLE parser_create(int sock_fd);
+parser_t *NULLABLE parser_create(atomic_bool *NONNULL shutdown_requested, int sock_fd);
 
 [[gnu::pure, gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
 /**

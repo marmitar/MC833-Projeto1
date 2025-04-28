@@ -2,6 +2,7 @@
 /** Concurrent work queue. */
 #define SCR_WORKER_QUEUE_H
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -61,6 +62,14 @@ void workq_destroy(workq_t *NONNULL queue);
  */
 bool workq_push(workq_t *NONNULL queue, work_item item);
 
+[[gnu::nonnull(1), gnu::cold, gnu::leaf, gnu::nothrow]]
+/**
+ * Clears the work queue for shutdown.
+ *
+ * Returns `true` on success, or `false` on synchronization issues.
+ */
+bool workq_clear(workq_t *NONNULL queue);
+
 [[nodiscard("item will be uninitialized on false"), gnu::nonnull(1, 2), gnu::leaf, gnu::nothrow]]
 /**
  * Remove an item from the queue.
@@ -69,13 +78,13 @@ bool workq_push(workq_t *NONNULL queue, work_item item);
  */
 bool workq_pop(workq_t *NONNULL queue, work_item *NONNULL item);
 
-[[gnu::nonnull(1), gnu::leaf, gnu::nothrow]]
+[[gnu::nonnull(1, 2), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
  * Block current thread until there is an item to be taken in the work queue.
  *
  * Returns `true` if the wait was successfull and the work queue is not empty anymore, or `false` in case of issues
  * with the synchronization variables.
  */
-bool workq_wait_not_empty(workq_t *NONNULL queue);
+bool workq_wait_not_empty(workq_t *NONNULL queue, atomic_bool *NONNULL stop_condition);
 
 #endif /* SCR_WORKER_QUEUE_H */

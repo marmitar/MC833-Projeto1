@@ -64,8 +64,8 @@ extern int main(void) {
     }
 
     // initialize worker threads
-    workers_t *workers = workers_start();
-    if unlikely (workers == NULL) {
+    setup_ok = workers_start();
+    if unlikely (!setup_ok) {
         perror("workers_start");
         return EXIT_FAILURE;
     }
@@ -73,12 +73,11 @@ extern int main(void) {
     // initialize socket
     int server_fd = start_server();
     if unlikely (server_fd < 0) {
-        workers_stop(workers);
+        workers_stop();
         return EXIT_FAILURE;
     }
-
     // start accepting
-    while (true) {
+    while (likely(!was_shutdown_requested())) {
         struct sockaddr_in client_addr;
         socklen_t addrlen = sizeof(client_addr);
         int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &addrlen);
@@ -86,7 +85,7 @@ extern int main(void) {
             continue;
         }
 
-        bool ok = workers_add_work(workers, client_fd);
+        bool ok = workers_add_work(client_fd);
         if unlikely (!ok) {
             close(client_fd);
             (void) fprintf(stderr, "workers_add_work: no worker thread to handle request\n");
@@ -94,7 +93,8 @@ extern int main(void) {
         }
     }
 
+    (void) fprintf(stderr, "main: shutdown requested\n");
     close(server_fd);
-    workers_stop(workers);
+    workers_stop();
     return EXIT_SUCCESS;
 }

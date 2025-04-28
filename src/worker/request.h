@@ -2,12 +2,14 @@
 /** Network request hander. */
 #define SRC_WORKER_REQUEST_HANDLER_H
 
+#include <stdatomic.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "../database/database.h"
 #include "../defines.h"
 
-[[gnu::nonnull(2), gnu::hot]]
+[[gnu::nonnull(3, 4), gnu::hot]]
 /**
  * Handles a single client connection on sock_fd, parsing YAML requests and calling the database functions.
  *
@@ -19,6 +21,6 @@
  * @param db      A non-null pointer to the open database connection.
  * @return true if a hard failure occurred and the server should possibly shut down, false otherwise.
  */
-bool handle_request(int sock_fd, db_conn_t *NONNULL db);
+bool handle_request(size_t id, int sock_fd, db_conn_t *NONNULL db, atomic_bool *NONNULL shutdown_requested);
 
 #endif  // SRC_WORKER_REQUEST_HANDLER_H
