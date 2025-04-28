@@ -85,7 +85,7 @@ void parser_destroy(parser_t *NONNULL parser);
  * If we are inside a mapping, we expect a key that identifies the operation type, and then we parse its parameters.
  * If we are outside, we only allow certain operation types (e.g., list).
  *
- * @return An operation describing what to do (with any associated data), or INVALID_OP on error.
+ * @return An operation describing what to do (with any associated data), or PARSE_ERROR on error.
  */
 struct operation parser_next_op(parser_t *NONNULL parser);
 

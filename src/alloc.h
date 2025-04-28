@@ -42,9 +42,7 @@
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 static inline void *NULLABLE alloc_aligned(size_t alignment, size_t count, size_t size) {
     assume(is_power_of_two(alignment));
-    if unlikely (!is_power_of_two(alignment)) {
-        return NULL;
-    }
+    assume(size > 0);
 
     size_t bytes;
     bool overflow = ckd_mul(&bytes, count, size);
@@ -52,6 +50,7 @@ static inline void *NULLABLE alloc_aligned(size_t alignment, size_t count, size_
         return NULL;
     }
 
+    assume(bytes % alignment == 0);
     void *NULLABLE ptr = aligned_alloc(alignment, bytes);
     if unlikely (ptr == NULL) {
         return NULL;

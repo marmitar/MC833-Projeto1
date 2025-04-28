@@ -8,9 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
-#include <bits/pthreadtypes.h>
-#include <bits/time.h>
 #include <immintrin.h>
 #include <pthread.h>
 
@@ -261,7 +260,7 @@ bool workq_push(workq_t *NONNULL queue, work_item item) {
     // WARNING: this is racy, if two threads try to push at the same time, which can't happen in this project.
     queue->buf[idx(tail)] = item;
 
-    bool ok = atomic_compare_exchange_weak_explicit(
+    bool ok = atomic_compare_exchange_strong_explicit(
         &(queue->tail),
         &tail,
         tail + 1,

@@ -94,7 +94,7 @@ movie_builder_t *NULLABLE movie_builder_create(void) {
         return NULL;
     }
 
-    struct movie_ref *list = alloc_like(struct movie_ref, 0);
+    struct movie_ref *list = alloc_like(struct movie_ref, 1);
     if unlikely (list == NULL) {
         free(data);
         free(builder);
@@ -105,7 +105,7 @@ movie_builder_t *NULLABLE movie_builder_create(void) {
     builder->str_capacity = BUFFER_PAGE_SIZE;
 
     builder->movie_list = list;
-    builder->list_capacity = 0;
+    builder->list_capacity = 1;
     return builder;
 }
 
@@ -138,17 +138,17 @@ bool movie_builder_has_title(const movie_builder_t *NONNULL builder) {
     return builder->has_title;
 }
 
-/** Check if `title` is already set for the current movie. */
+/** Check if `director` is already set for the current movie. */
 bool movie_builder_has_director(const movie_builder_t *NONNULL builder) {
     return builder->has_director;
 }
 
-/** Check if `title` is already set for the current movie. */
+/** Check if `release_year` is already set for the current movie. */
 bool movie_builder_has_release_year(const movie_builder_t *NONNULL builder) {
     return builder->has_release_year;
 }
 
-/** Check if `title` is already set for the current movie. */
+/** Check if `genres` is already set for the current movie. */
 bool movie_builder_has_genres(const movie_builder_t *NONNULL builder) {
     return builder->has_genres;
 }
@@ -187,7 +187,7 @@ static bool movie_builder_realloc_str_data(movie_builder_t *NONNULL builder, siz
     memcpy(
         aligned_as(BUFFER_PAGE_SIZE, data),
         aligned_as(BUFFER_PAGE_SIZE, builder->str_data),
-        builder->str_capacity * BUFFER_PAGE_SIZE * sizeof(char)
+        builder->str_in_use * sizeof(char)
     );
     free(builder->str_data);
 
@@ -342,7 +342,12 @@ bool movie_builder_add_genre(movie_builder_t *NONNULL builder, size_t len, const
 static const char *NONNULL *NULLABLE
     movie_builder_take_genres(const movie_builder_t *NONNULL builder, struct movie_ref ref) {
     const size_t count = ref.genres_count;
-    const char *NONNULL *output = (const char **) malloc(count * sizeof(char *));
+    size_t bytes;
+    if unlikely (ckd_mul(&bytes, count, sizeof(char *))) {
+        return NULL;
+    }
+
+    const char *NONNULL *output = (const char **) malloc(bytes);
     if unlikely (output == NULL) {
         return NULL;
     }

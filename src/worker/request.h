@@ -19,7 +19,7 @@
  *
  * @param sock_fd The accepted socket file descriptor for this client.
  * @param db      A non-null pointer to the open database connection.
- * @return true if a hard failure occurred and the server should possibly shut down, false otherwise.
+ * @return true on success, and false if a hard failure occurred and the server should possibly shut down.
  */
 bool handle_request(size_t id, int sock_fd, db_conn_t *NONNULL db, atomic_bool *NONNULL shutdown_requested);
 

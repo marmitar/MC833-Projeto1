@@ -103,7 +103,7 @@ parser_t *NULLABLE parser_create(atomic_bool *NONNULL shutdown_requested, const 
 void parser_destroy(parser_t *NONNULL parser) {
     yaml_parser_delete(&(parser->yaml));
     movie_builder_destroy(parser->builder);
-    if (parser->error_message == NULL) {
+    if (parser->error_message != NULL) {
         free(parser->error_message);
     }
     free(parser);
@@ -364,7 +364,7 @@ static bool parse_i64(const char *NONNULL str, int64_t *NONNULL out) {
     char *end;
     errno = 0;
 
-    constexpr int AS_DECIMAL = 10;
+    static constexpr const int AS_DECIMAL = 10;
     long long val = strtoll(str, &end, AS_DECIMAL);
     if unlikely (errno == ERANGE || val < INT64_MIN || val > INT64_MAX || end == str || *end != '\0') {
         return false;
@@ -627,6 +627,7 @@ static struct operation parse_movie(parser_t *NONNULL parser, enum operation_ty 
                             // Not inside a mapping => error
                             last_error = parse_invalid(parser, position, "invalid movie input, not inside a mapping");
                         }
+                        break;
 
                     case TITLE_KEY:
                         if (!movie_builder_has_title(parser->builder)) {

@@ -72,7 +72,7 @@ static void send_movie(int sock_fd, struct movie movie, bool in_list) {
     send(sock_fd, msg, strlen(msg), 0);
     (void) snprintf(msg, sizeof(msg), "  %2stitle: %s\n", in_list ? "  " : "", movie.title);
     send(sock_fd, msg, strlen(msg), 0);
-    (void) snprintf(msg, sizeof(msg), "  %2sreleased_year: %d\n", in_list ? "  " : "", movie.release_year);
+    (void) snprintf(msg, sizeof(msg), "  %2srelease_year: %d\n", in_list ? "  " : "", movie.release_year);
     send(sock_fd, msg, strlen(msg), 0);
     (void) snprintf(msg, sizeof(msg), "  %2sdirector: %s\n", in_list ? "  " : "", movie.director);
     send(sock_fd, msg, strlen(msg), 0);
@@ -115,7 +115,6 @@ static void send_summary_list(int sock_fd, size_t count, struct movie_summary su
     send(sock_fd, msg, strlen(msg), 0);
 
     for (size_t i = 0; i < count; i++) {
-        char msg[RESP_LEN];
         (void) snprintf(msg, sizeof(msg), "  - { id: %" PRIi64 ", title: '%s' }\n", summary[i].id, summary[i].title);
         send(sock_fd, msg, strlen(msg), 0);
     }
@@ -135,7 +134,7 @@ struct [[gnu::aligned(MAX_IP_LEN)]] ip_string {
 
 /** Writes the client IP in human readable format. */
 static struct ip_string get_peer_ip(int sock_fd) {
-    constexpr struct ip_string UNKNOWN = {.ip = "<unknown>"};
+    static constexpr const struct ip_string UNKNOWN = {.ip = "<unknown>"};
 
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
@@ -150,7 +149,7 @@ static struct ip_string get_peer_ip(int sock_fd) {
     }
 
     struct ip_string str = {.ip = ""};
-    const char *p = inet_ntop(AF_INET, &addr, str.ip, MAX_IP_LEN);
+    const char *p = inet_ntop(AF_INET, &(addr.sin_addr), str.ip, MAX_IP_LEN);
     if unlikely (p == NULL) {
         return UNKNOWN;
     }
@@ -187,10 +186,10 @@ bool handle_request(size_t id, int sock_fd, db_conn_t *NONNULL db, atomic_bool *
         const char *errmsg = NULL;
         db_result_t result;
         switch (op.ty) {
-            case PARSE_DONE:
+            case PARSE_DONE: {
                 result = DB_SUCCESS;
                 break;
-
+            }
             case ADD_MOVIE: {
                 char response[RESP_LEN] = "\n";
                 (void) snprintf(
@@ -287,7 +286,7 @@ bool handle_request(size_t id, int sock_fd, db_conn_t *NONNULL db, atomic_bool *
             }
             case LIST_SUMMARIES: {
                 char response[RESP_LEN] = "\n";
-                (void) snprintf(response, sizeof(response), "server: received LIST_SUMMARIES: %s\n", op.key.genre);
+                (void) snprintf(response, sizeof(response), "server: received LIST_SUMMARIES\n");
                 send(sock_fd, response, strlen(response), 0);
 
                 size_t list_size;
@@ -298,14 +297,14 @@ bool handle_request(size_t id, int sock_fd, db_conn_t *NONNULL db, atomic_bool *
                 }
                 break;
             }
-            case PARSE_ERROR:
+            case PARSE_ERROR: {
                 char response[RESP_LEN] = "\n";
                 (void) snprintf(response, sizeof(response), "server: parsing error: %s\n\n", op.error_message);
                 send(sock_fd, response, strlen(response), 0);
 
                 result = DB_SUCCESS;
                 break;
-
+            }
             default: {
                 const char response[RESP_LEN] = "server: unexpected error\n\n";
                 send(sock_fd, response, strlen(response), 0);

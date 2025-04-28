@@ -49,6 +49,12 @@ SystemHeaders:   false
 FormatStyle:     file
 User:            marmis
 CheckOptions:
+  misc-include-cleaner.IgnoreHeaders: '
+    asm-generic/socket.h;
+    bits/pthreadtypes.h;
+    bits/time.h;
+    bits/types/sigset_t.h;
+    bits/types/struct_timeval.h'
   bugprone-easily-swappable-parameters.QualifiersMix: false
   bugprone-easily-swappable-parameters.ModelImplicitConversions: false
   cert-dcl16-c.NewSuffixes: 'L;LL;LU;LLU'

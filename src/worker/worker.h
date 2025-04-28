@@ -31,7 +31,7 @@ void workers_stop(void);
  *
  * Returns true if successful, or false if all workers are dead.
  */
-bool workers_add_work(int socket_fd);
+bool workers_add_work(int socket_fd, unsigned retries);
 
 [[gnu::hot, gnu::leaf, gnu::nothrow]]
 /**

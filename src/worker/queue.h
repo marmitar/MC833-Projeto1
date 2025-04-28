@@ -1,6 +1,6 @@
-#ifndef SCR_WORKER_QUEUE_H
+#ifndef SRC_WORKER_QUEUE_H
 /** Concurrent work queue. */
-#define SCR_WORKER_QUEUE_H
+#define SRC_WORKER_QUEUE_H
 
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -47,7 +47,7 @@ workq_t *NULLABLE workq_create(void);
 /**
  * Deallocates memory for the work queue and destroy its synchronization variables.
  *
- * Returns `true` if destruction was successful, or `false` if the synchronization variables are still in use.
+ * Issues are printed out to stderr.
  */
 void workq_destroy(workq_t *NONNULL queue);
 
@@ -87,4 +87,4 @@ bool workq_pop(workq_t *NONNULL queue, work_item *NONNULL item);
  */
 bool workq_wait_not_empty(workq_t *NONNULL queue, atomic_bool *NONNULL stop_condition);
 
-#endif /* SCR_WORKER_QUEUE_H */
+#endif /* SRC_WORKER_QUEUE_H */

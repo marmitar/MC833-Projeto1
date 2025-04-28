@@ -6,8 +6,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <bits/pthreadtypes.h>
-#include <bits/types/sigset_t.h>
 #include <immintrin.h>
 #include <pthread.h>
 
@@ -216,7 +214,7 @@ static bool start_worker(struct worker *NONNULL worker, workq_t *NONNULL queue) 
         return false;
     }
 
-    constexpr size_t NAME_LEN = 16;
+    static constexpr const size_t NAME_LEN = 16;
     char name[NAME_LEN] = "";
     (void) snprintf(name, NAME_LEN, "worker[%zu]", worker_id);
     (void) pthread_setname_np(output_id, name);
@@ -326,10 +324,10 @@ static bool restart_dead_workers(void) {
 }
 
 /** Adds `socket_fd` to the worker queue and signal worker threads that a new connection is open. */
-bool workers_add_work(int socket_fd) {
+bool workers_add_work(int socket_fd, unsigned retries) {
     workq_t *NONNULL const queue = aligned_as(2 * CACHE_LINE_SIZE, workers.queue);
 
-    while (likely(!was_shutdown_requested())) {
+    while (likely(!was_shutdown_requested()) && likely(retries > 0)) {
         bool has_workers = restart_dead_workers();
         if unlikely (!has_workers) {
             return false;
@@ -340,6 +338,7 @@ bool workers_add_work(int socket_fd) {
             return true;
         }
 
+        retries -= 1;
         _mm_pause();
     }
 

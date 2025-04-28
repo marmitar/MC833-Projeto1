@@ -53,19 +53,19 @@ bool movie_builder_has_title(const movie_builder_t *NONNULL builder);
 
 [[gnu::nonnull(1), gnu::hot, gnu::pure, gnu::leaf, gnu::nothrow]]
 /**
- * Check if `title` is already set for the current movie.
+ * Check if `director` is already set for the current movie.
  */
 bool movie_builder_has_director(const movie_builder_t *NONNULL builder);
 
 [[gnu::nonnull(1), gnu::hot, gnu::pure, gnu::leaf, gnu::nothrow]]
 /**
- * Check if `title` is already set for the current movie.
+ * Check if `release_year` is already set for the current movie.
  */
 bool movie_builder_has_release_year(const movie_builder_t *NONNULL builder);
 
 [[gnu::nonnull(1), gnu::hot, gnu::pure, gnu::leaf, gnu::nothrow]]
 /**
- * Check if `title` is already set for the current movie.
+ * Check if `genres` is already set for the current movie.
  */
 bool movie_builder_has_genres(const movie_builder_t *NONNULL builder);
 
@@ -89,7 +89,7 @@ bool movie_builder_set_title(movie_builder_t *NONNULL builder, size_t len, const
 
 [[gnu::nonnull(1, 3), gnu::hot, gnu::leaf, gnu::nothrow]]
 /**
- * Set the title for the current movie.
+ * Set the director for the current movie.
  *
  * Should not be called more than once for the same movie.
  *
@@ -142,8 +142,6 @@ bool movie_builder_take_current_movie(const movie_builder_t *NONNULL builder, st
  * Dereference the summary of the current movie.
  *
  * The builder should not be modified after this, until the reference is forgotten.
- *
- * Returns `true` on success and `false` on allocation failures.
  */
 void movie_builder_take_current_summary(const movie_builder_t *NONNULL builder, struct movie_summary *NONNULL output);
 

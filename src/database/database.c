@@ -76,7 +76,8 @@ static inline void errmsg_dup_rc(message_t *NULLABLE errmsg, const int rc) {
 [[gnu::cold, gnu::nonnull(1, 2)]]
 /** Builds a formatted error message for expected user errors. */
 static const char *NONNULL errmsg_vprintf(const char *NONNULL restrict format, va_list args) {
-    constexpr size_t BUFSIZE = 128;
+    static constexpr const size_t BUFSIZE = 128;
+
     char *error_message = malloc(BUFSIZE * sizeof(char));
     if unlikely (error_message == NULL) {
         return OUT_OF_MEMORY_ERROR;
@@ -165,7 +166,7 @@ static void db_shutdown(void) {
 static bool db_create_schema(sqlite3 *NONNULL db, message_t *NULLABLE errmsg) {
     char *errorbuf = NULL;  // will be allocated via sqlite3_malloc, need to copied to std malloc
 
-    int rv = sqlite3_exec(db, SCHEMA, nullptr, nullptr, likely(errmsg != NULL) ? &errorbuf : NULL);
+    int rv = sqlite3_exec(db, SCHEMA, NULL, NULL, likely(errmsg != NULL) ? &errorbuf : NULL);
     if unlikely (rv != SQLITE_OK) {
         errmsg_dup_str(errmsg, errorbuf);
         sqlite3_free(errorbuf);  // safe to call with NULL
@@ -266,7 +267,7 @@ static sqlite3_stmt *NULLABLE db_prepare(
 
     sqlite3_stmt *stmt = NULL;
     const char *tail = NULL;
-    constexpr int FLAGS = SQLITE_PREPARE_PERSISTENT | SQLITE_PREPARE_NO_VTAB;
+    static constexpr const int FLAGS = SQLITE_PREPARE_PERSISTENT | SQLITE_PREPARE_NO_VTAB;
 
     const int rv = sqlite3_prepare_v3(db, sql, ((int) len) + 1, FLAGS, &stmt, &tail);
     if unlikely (rv != SQLITE_OK) {
@@ -474,6 +475,7 @@ bool db_disconnect(db_conn_t *NONNULL conn, message_t *NULLABLE errmsg) {
     db_finalize(db, conn->op_select_movie_genres, &ok, errmsg);
     db_finalize(db, conn->op_select_movies_genre, &ok, errmsg);
     ok = db_close(db, ok ? errmsg : NULL) && ok;
+    movie_builder_destroy(conn->builder);
 
     memset(conn, 0, sizeof(struct database_connection));
     free(conn);
@@ -846,6 +848,16 @@ static db_result_t delete_movie_in_transaction(const db_conn_t conn, int64_t mov
     return db_eval_stmt(conn.op_delete_movie);
 }
 
+/** Runs `op_delete_unused_genres` inside its automatic transaction. */
+static void delete_unused_genres_in_transaction(const db_conn_t conn) {
+    db_result_t result = db_eval_stmt(conn.op_delete_unused_genres);
+    if unlikely (result != DB_SUCCESS) {
+        const char *NONNULL errmsg = sqlite3_errmsg(conn.db);
+        (void) fprintf(stderr, "failed to delete unused genres: %s\n", errmsg);
+        // just print errors for this one, and keeps running
+    }
+}
+
 /** Removes a movie from the database. */
 db_result_t db_delete_movie(db_conn_t *NONNULL conn, int64_t movie_id, message_t *NULLABLE errmsg) {
     // no need to create an explicit transaction for a single statement
@@ -859,6 +871,8 @@ db_result_t db_delete_movie(db_conn_t *NONNULL conn, int64_t movie_id, message_t
         errmsg_printf(errmsg, "no movie with id = %" PRIi64 " to be deleted from the database", movie_id);
         return DB_USER_ERROR;
     }
+
+    delete_unused_genres_in_transaction(*conn);
     return DB_SUCCESS;
 }
 

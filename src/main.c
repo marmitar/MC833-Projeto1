@@ -1,21 +1,24 @@
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#include <bits/types/struct_timeval.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/time.h>  // IWYU pragma: keep
 
 #include "./database/database.h"
 #include "./defines.h"
 #include "./worker/worker.h"
 
+[[gnu::cold]]
+/** Set up server socket and start listening. */
 static int start_server(void) {
     static constexpr const uint16_t PORT = 12'345;
-    static constexpr const int BACKLOG = 5;
-    static constexpr const struct timeval SOCKET_TIMEOUT = {.tv_sec = 60, .tv_usec = 0};
+    static constexpr const int BACKLOG = 32;
 
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if unlikely (server_fd < 0) {
@@ -24,20 +27,18 @@ static int start_server(void) {
     }
 
     int yes = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));  // NOLINT(misc-include-cleaner)
-    setsockopt(
-        server_fd,
-        SOL_SOCKET,
-        SO_RCVTIMEO,  // NOLINT(misc-include-cleaner)
-        &SOCKET_TIMEOUT,
-        sizeof(SOCKET_TIMEOUT)
-    );
+    int rv = setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    if unlikely (rv != 0) {
+        perror("setsockopt");
+        close(server_fd);
+        return -1;
+    }
+
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
         .sin_port = htons(PORT),
         .sin_addr.s_addr = INADDR_ANY,
     };
-
     if unlikely (bind(server_fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
         perror("bind");
         close(server_fd);
@@ -71,29 +72,48 @@ extern int main(void) {
     }
 
     // initialize socket
-    int server_fd = start_server();
+    const int server_fd = start_server();
     if unlikely (server_fd < 0) {
         workers_stop();
         return EXIT_FAILURE;
     }
+
     // start accepting
     while (likely(!was_shutdown_requested())) {
         struct sockaddr_in client_addr;
         socklen_t addrlen = sizeof(client_addr);
         int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &addrlen);
         if unlikely (client_fd < 0) {
+            (void) fprintf(stderr, "main: accept failed: %s\n", strerrordesc_np(errno));
             continue;
         }
 
-        bool ok = workers_add_work(client_fd);
-        if unlikely (!ok) {
+        static constexpr const size_t ADDR_LEN = 32;
+        char address_str[ADDR_LEN] = "<unknown>";
+        (void) inet_ntop(AF_INET, &(client_addr.sin_addr), address_str, ADDR_LEN);
+        (void) fprintf(stderr, "main: client accepted: %s\n", address_str);
+
+        static constexpr const struct timeval SOCKET_TIMEOUT = {.tv_sec = 60, .tv_usec = 0};
+        int rv0 = setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &SOCKET_TIMEOUT, sizeof(SOCKET_TIMEOUT));
+        int rv1 = setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &SOCKET_TIMEOUT, sizeof(SOCKET_TIMEOUT));
+        if unlikely (rv0 != 0 || rv1 != 0) {
+            (void) fprintf(stderr, "main: could not set timeout for %s, ending communications early\n", address_str);
             close(client_fd);
-            (void) fprintf(stderr, "workers_add_work: no worker thread to handle request\n");
-            break;
+            continue;
+        }
+
+        static constexpr const unsigned MAX_RETRIES = 512;
+        bool ok = workers_add_work(client_fd, MAX_RETRIES);
+        if unlikely (!ok) {
+            (void) fprintf(stderr, "main: no worker thread to handle %s, ignoring client\n", address_str);
+            close(client_fd);
+            continue;
         }
     }
 
-    (void) fprintf(stderr, "main: shutdown requested\n");
+    if likely (was_shutdown_requested()) {
+        (void) fprintf(stderr, "main: shutdown requested\n");
+    }
     close(server_fd);
     workers_stop();
     return EXIT_SUCCESS;
