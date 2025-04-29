@@ -1047,28 +1047,9 @@ db_result_t db_get_movie(
     return res;
 }
 
-[[gnu::nonnull(2)]]
 /** Read all movies and run callback on each. */
-static db_result_t list_movies_in_transaction(
-    const db_conn_t conn,
-    struct movie *NONNULL *NONNULL output,
-    size_t *NONNULL output_length
-) {
-    const db_result_t res = iter_movies(conn.builder, conn.op_select_all_movies, conn.op_select_movie_genres);
-
-    if unlikely (res != DB_SUCCESS) {
-        return res;
-    }
-
-    size_t length;
-    struct movie *list = movie_builder_take_movie_list(conn.builder, &length);
-    if unlikely (list == NULL) {
-        return DB_RUNTIME_ERROR;
-    }
-
-    *output = list;
-    *output_length = length;
-    return DB_SUCCESS;
+static db_result_t list_movies_in_transaction(const db_conn_t conn) {
+    return iter_movies(conn.builder, conn.op_select_all_movies, conn.op_select_movie_genres);
 }
 
 /** List all movies with full information. */
@@ -1083,49 +1064,44 @@ db_result_t db_list_movies(
         return res;
     }
 
-    res = list_movies_in_transaction(*conn, output, output_length);
-    if likely (res == DB_SUCCESS) {
-        return db_transaction_commit(conn, errmsg);
+    res = list_movies_in_transaction(*conn);
+    if unlikely (res != DB_SUCCESS) {
+        if (sqlite3_extended_errcode(conn->db) != SQLITE_OK) {
+            errmsg_dup_db(errmsg, conn->db);
+        } else {
+            errmsg_dup_str(errmsg, UNKNOWN_ERROR);
+        }
+        db_transaction_rollback(conn, errmsg);
+        return res;
     }
 
-    if (sqlite3_extended_errcode(conn->db) != SQLITE_OK) {
-        errmsg_dup_db(errmsg, conn->db);
-    } else {
-        errmsg_dup_str(errmsg, (res == DB_RUNTIME_ERROR) ? OUT_OF_MEMORY_ERROR : UNKNOWN_ERROR);
-    }
-    db_transaction_rollback(conn, errmsg);
-    return res;
-}
-
-[[gnu::nonnull(2)]]
-/** Search through movies and run callback on each. */
-static db_result_t search_movies_in_transaction(
-    const db_conn_t conn,
-    const char genre[NONNULL restrict const],
-    struct movie *NONNULL *NONNULL output,
-    size_t *NONNULL output_length
-) {
-    int rv = sqlite3_bind_text(conn.op_select_movies_genre, 1, genre, -1, SQLITE_STATIC);
-    if unlikely (rv != SQLITE_OK) {
-        sqlite3_clear_bindings(conn.op_select_movies_genre);
-        return check_result(rv, sqlite3_reset(conn.op_select_movies_genre));
-    }
-
-    const db_result_t res = iter_movies(conn.builder, conn.op_select_movies_genre, conn.op_select_movie_genres);
-
+    res = db_transaction_commit(conn, errmsg);
     if unlikely (res != DB_SUCCESS) {
         return res;
     }
 
     size_t length;
-    struct movie *list = movie_builder_take_movie_list(conn.builder, &length);
+    struct movie *list = movie_builder_take_movie_list(conn->builder, &length);
     if unlikely (list == NULL) {
+        errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
         return DB_RUNTIME_ERROR;
     }
 
     *output = list;
     *output_length = length;
     return DB_SUCCESS;
+}
+
+[[gnu::nonnull(2)]]
+/** Search through movies and run callback on each. */
+static db_result_t search_movies_in_transaction(const db_conn_t conn, const char genre[NONNULL restrict const]) {
+    int rv = sqlite3_bind_text(conn.op_select_movies_genre, 1, genre, -1, SQLITE_STATIC);
+    if unlikely (rv != SQLITE_OK) {
+        sqlite3_clear_bindings(conn.op_select_movies_genre);
+        return check_result(rv, sqlite3_reset(conn.op_select_movies_genre));
+    }
+
+    return iter_movies(conn.builder, conn.op_select_movies_genre, conn.op_select_movie_genres);
 }
 
 /* List all movies with a given genre. */
@@ -1141,18 +1117,32 @@ db_result_t db_search_movies_by_genre(
         return res;
     }
 
-    res = search_movies_in_transaction(*conn, genre, output, output_length);
-    if likely (res == DB_SUCCESS) {
-        return db_transaction_commit(conn, errmsg);
+    res = search_movies_in_transaction(*conn, genre);
+    if unlikely (res != DB_SUCCESS) {
+        if (sqlite3_extended_errcode(conn->db) != SQLITE_OK) {
+            errmsg_dup_db(errmsg, conn->db);
+        } else {
+            errmsg_dup_str(errmsg, UNKNOWN_ERROR);
+        }
+        db_transaction_rollback(conn, errmsg);
+        return res;
     }
 
-    if (sqlite3_extended_errcode(conn->db) != SQLITE_OK) {
-        errmsg_dup_db(errmsg, conn->db);
-    } else {
-        errmsg_dup_str(errmsg, (res == DB_RUNTIME_ERROR) ? OUT_OF_MEMORY_ERROR : UNKNOWN_ERROR);
+    res = db_transaction_commit(conn, errmsg);
+    if unlikely (res != DB_SUCCESS) {
+        return res;
     }
-    db_transaction_rollback(conn, errmsg);
-    return res;
+
+    size_t length;
+    struct movie *list = movie_builder_take_movie_list(conn->builder, &length);
+    if unlikely (list == NULL) {
+        errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
+        return DB_RUNTIME_ERROR;
+    }
+
+    *output = list;
+    *output_length = length;
+    return DB_SUCCESS;
 }
 
 [[gnu::nonnull(1, 2)]]
@@ -1179,13 +1169,8 @@ static db_result_t get_summary_in_list(movie_builder_t *NONNULL builder, sqlite3
     return DB_SUCCESS;
 }
 
-[[gnu::nonnull(2)]]
 /** Read title and id of all movies and run callback on each. */
-static db_result_t list_summaries_in_transaction(
-    const db_conn_t conn,
-    struct movie_summary *NONNULL *NONNULL output,
-    size_t *NONNULL output_length
-) {
+static db_result_t list_summaries_in_transaction(const db_conn_t conn) {
     movie_builder_reset(conn.builder);
 
     int rv;
@@ -1201,19 +1186,8 @@ static db_result_t list_summaries_in_transaction(
     int rrv = sqlite3_reset(conn.op_select_all_titles);
     if unlikely ((rv != SQLITE_DONE && rv != SQLITE_ROW) || rrv != SQLITE_OK) {
         return check_result(rv, rrv);
-    } else if unlikely (res != DB_SUCCESS) {
-        return res;
     }
-
-    size_t length;
-    struct movie_summary *list = movie_builder_take_summary_list(conn.builder, &length);
-    if unlikely (list == NULL) {
-        return DB_RUNTIME_ERROR;
-    }
-
-    *output = list;
-    *output_length = length;
-    return DB_SUCCESS;
+    return res;
 }
 
 /** List all movies with reduced information. */
@@ -1228,16 +1202,30 @@ db_result_t db_list_summaries(
         return res;
     }
 
-    res = list_summaries_in_transaction(*conn, output, output_length);
-    if likely (res == DB_SUCCESS) {
-        return db_transaction_commit(conn, errmsg);
+    res = list_summaries_in_transaction(*conn);
+    if unlikely (res != DB_SUCCESS) {
+        if (sqlite3_extended_errcode(conn->db) != SQLITE_OK) {
+            errmsg_dup_db(errmsg, conn->db);
+        } else {
+            errmsg_dup_str(errmsg, UNKNOWN_ERROR);
+        }
+        db_transaction_rollback(conn, errmsg);
+        return res;
     }
 
-    if (sqlite3_extended_errcode(conn->db) != SQLITE_OK) {
-        errmsg_dup_db(errmsg, conn->db);
-    } else {
-        errmsg_dup_str(errmsg, (res == DB_RUNTIME_ERROR) ? OUT_OF_MEMORY_ERROR : UNKNOWN_ERROR);
+    res = db_transaction_commit(conn, errmsg);
+    if unlikely (res != DB_SUCCESS) {
+        return res;
     }
-    db_transaction_rollback(conn, errmsg);
-    return res;
+
+    size_t length;
+    struct movie_summary *list = movie_builder_take_summary_list(conn->builder, &length);
+    if unlikely (list == NULL) {
+        errmsg_dup_str(errmsg, OUT_OF_MEMORY_ERROR);
+        return DB_RUNTIME_ERROR;
+    }
+
+    *output = list;
+    *output_length = length;
+    return DB_SUCCESS;
 }
