@@ -959,7 +959,7 @@ static db_result_t iter_movies(
     movie_builder_reset(builder);
 
     int rv;
-    db_result_t res;
+    db_result_t res = DB_SUCCESS;
     while ((rv = sqlite3_step(outer_stmt)) == SQLITE_ROW) {
         res = get_movie_with_genres(builder, outer_stmt, inner_stmt);
         if unlikely (res != DB_SUCCESS) {
@@ -1174,7 +1174,7 @@ static db_result_t list_summaries_in_transaction(const db_conn_t conn) {
     movie_builder_reset(conn.builder);
 
     int rv;
-    db_result_t res;
+    db_result_t res = DB_SUCCESS;
     while ((rv = sqlite3_step(conn.op_select_all_titles)) == SQLITE_ROW) {
         res = get_summary_in_list(conn.builder, conn.op_select_all_titles);
         if unlikely (res != DB_SUCCESS) {
